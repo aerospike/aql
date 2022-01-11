@@ -1,0 +1,19 @@
+This directory holds a test for using Lua to call a module written in C.
+Please ensure that gcc, wget are installed.
+
+To run the example, run the commands:
+
+> sudo ./build.sh
+> aql -c "execute use_power.call_go(123) on test where pk='x'"
+
+SUCCESS: 15129
+
+
+The build.sh will:
+--  build the power.so
+--  register the power.so and use_power.lua files with the server.
+
+The asql call will:
+--  initiate a call to use_power.call_go with 123 as its argument.
+    use_power.call_go imports power.so to calculate the square of 123.
+

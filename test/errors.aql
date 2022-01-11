@@ -1,0 +1,41 @@
+# create index - invalid namespace
+CREATE INDEX ind ON abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo (bin0) NUMERIC
+
+# create index - invalid set name
+CREATE INDEX ind1 ON test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz (bin1) NUMERIC
+
+# create index - invalid index name
+CREATE INDEX abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz ON test_I.demo (bin3) NUMERIC
+
+# create index - invalid index name
+CREATE INDEX idx_test_1 ON test.demo (segfihsedgifhselghselFGHSElfkhjasflkhasflkhFSLAShflakshFLAkshfasf) NUMERIC
+
+# create record - invalid namespace
+INSERT INTO abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo (PK, bin0, bin1) values ('0', 1, 2)
+
+# create record - invalid set name
+INSERT INTO test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz (PK, bin0, bin1) values ('0', 1, 2)
+
+# create record - invalid bin name
+INSERT INTO test_I.demo (PK, bin0, abcdeffghijklmnopqrstuvwxyz) values ('0', 1, 2)
+
+# delete record - invalid namespace
+DELETE FROM abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo where PK='0'
+
+# delete record - invalid set name
+DELETE FROM test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz where PK='0'
+
+# select record - invalid namespace
+SELECT * FROM abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo
+
+# select record - invalid set name
+SELECT * FROM test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz
+
+# select record - invalid bin name
+SELECT abcdeffghijklmnopqrstuvwxyz FROM test.demo
+
+# drop index - invalid namespace
+DROP INDEX abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz ind0
+
+# drop index - invalid bin name
+DROP INDEX test_I abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz

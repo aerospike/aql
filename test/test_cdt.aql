@@ -1,0 +1,105 @@
+
+DELETE FROM test.demo WHERE PK=1
+
+# Invalid Command
+OPERATE LIST_APPEND("list1") ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1",) ON test.demo WHERE PK=1 
+INSERT INTO test.demo(PK) Values (1)
+INSERT INTO test.demo(PK,) Values (1)
+INSERT INTO test.demo(PK,bin1) Values (1,)
+SELECT a, from test.demo where PK=1
+
+
+OPERATE LIST_APPEND("list1", 1) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", 1.1) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", "2") ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", JSON('{"3":"3"}')) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", CAST('[4,5.5,"6"]' AS LIST)) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", "") ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", NULL) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND("list1", "NULL") ON test.demo WHERE PK=1 
+
+
+OPERATE LIST_APPEND_ITEMS("list2", LIST('[1,2.2,"3"]')) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", JSON('[4,5.5,"6"]')) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", CAST("[7,8.8,"9"]" AS LIST)) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", CAST('[7,8.8,"9"]' AS LIST)) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", "Baditem") ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", 0) ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", MAP('["a":"b"]') ON test.demo WHERE PK=1 
+OPERATE LIST_APPEND_ITEMS("list2", CAST('["a":"b"]' AS MAP)) ON test.demo WHERE PK=1 
+
+
+OPERATE LIST_INSERT("list3", 5, LIST('[1,2,3]')) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT("list3", 0, LIST('[4,5,6]')) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT("list3", -10, LIST('[7,8,9]')) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT("list3", -5, LIST('[7,8,9]')) ON test.demo WHERE PK=1 
+
+OPERATE LIST_INSERT_ITEMS("list4", 5, LIST('[1,2.2,"3"]')) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list4", 0, JSON('[4,5.5,"6"]')) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list4", -5, CAST('[7,8.8,"9"]' AS LIST)) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list4", 10, "10") ON test.demo WHERE PK=1 
+
+OPERATE LIST_POP("list5", 0) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list5", 0, LIST('[1,2.2,"3"]')) ON test.demo WHERE PK=1 
+OPERATE LIST_POP("list5", 6) ON test.demo WHERE PK=1 
+OPERATE LIST_POP("list5", -2) ON test.demo WHERE PK=1 
+OPERATE LIST_POP("list5", 1) ON test.demo WHERE PK=1 
+OPERATE LIST_POP("list5", 1.1) ON test.demo WHERE PK=1 
+
+
+OPERATE LIST_POP_RANGE("list6", 0, 5) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list6", 0, LIST('[1,2.2,"3",4,5,6,7,8,9,10,11]')) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 13, 12) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 13, 13) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 15, 16) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 2, 4) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", -1,1) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", -2,-1) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 2,-1) ON test.demo WHERE PK=1 
+OPERATE LIST_POP_RANGE("list6", 1.5,2.4) ON test.demo WHERE PK=1 
+
+
+OPERATE LIST_REMOVE("list7", 5) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list7", 0, LIST('[1,2.2,"3",4,5,6,7,8,9,10,11]')) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE("list7", 15) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE("list7", -15) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE("list7", 1) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE("list7", 1.1) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE("list7", "1") ON test.demo WHERE PK=1 
+
+OPERATE LIST_REMOVE_RANGE("list7", 13, 12) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 13, 13) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 15, 16) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 2, 4) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", -1,1) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", -2,-1) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 2,-1) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 1.5,2.4) ON test.demo WHERE PK=1 
+OPERATE LIST_REMOVE_RANGE("list7", 1, "a") ON test.demo WHERE PK=1 
+
+OPERATE LIST_SET("list8", 5, 1) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", -5, 1) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", 0, 1) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", 1.1) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", "2") ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", "2", 3) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", 1, JSON('{"3":"3"}')) ON test.demo WHERE PK=1 
+OPERATE LIST_SET("list8", CAST('[4,5.5,"6"]' AS LIST)) ON test.demo WHERE PK=1 
+
+OPERATE LIST_TRIM("list9") ON test.demo WHERE PK=1 
+OPERATE LIST_TRIM("list9", 0, -1) ON test.demo WHERE PK=1 
+OPERATE LIST_TRIM("list9", 0, 1) ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list9", 0, LIST('[1,2.2,"3",4,5,6,7,8,9,10,11]')) ON test.demo WHERE PK=1 
+OPERATE LIST_TRIM("list9", 0, 2) ON test.demo WHERE PK=1 
+OPERATE LIST_TRIM("list9", -1, 2) ON test.demo WHERE PK=1 
+
+OPERATE LIST_CLEAR("list10", -1, 2) ON test.demo WHERE PK=1 
+OPERATE LIST_CLEAR("list10") ON test.demo WHERE PK=1 
+OPERATE LIST_INSERT_ITEMS("list10", 0, LIST('[1,2.2,"3",4,5,6,7,8,9,10,11]')) ON test.demo WHERE PK=1 
+OPERATE LIST_CLEAR("list10", -1, 2) ON test.demo WHERE PK=1 
+OPERATE LIST_CLEAR("list10") ON test.demo WHERE PK=1 
+
+
+
+
