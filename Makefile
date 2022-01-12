@@ -132,6 +132,10 @@ aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
 	mkdir -p $(TARGET_BIN)/
 
+init:
+	cd jansson && autoreconf -i && ./configure && make
+	cd toml && make
+	
 install:
 	if [ ! -e /opt/aerospike/bin ]; then mkdir -p /opt/aerospike/bin; fi
 	cp -p $(TARGET_BIN)/aql /opt/aerospike/bin/.

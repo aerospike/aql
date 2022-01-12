@@ -17,6 +17,9 @@ citrusleaf_v.spec
 aerospike_v.spec
 toml/libtoml.a
 
+# Generated lexer code
+sql-lexer.c
+
 /client/c_clients/cl_c/client_test-valgrind
 =======
 

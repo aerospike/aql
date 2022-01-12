@@ -40,20 +40,9 @@ $ yum -y install zip rpmdevtools
 * Build the C client, as described in its repo's README.
 * Set the `CLIENTREPO` environment variable to point to the `aerospike-client-c` directory.
 
-### Build the latest 2.x Jansson
-
-	$ cd jansson/
-	$ autoreconf -i
-	$ ./configure
-	$ make
-
-### Build the toml
-
-	$ cd toml/
-	$ make
-
+### Setting up jansson and toml
+	$ make init
 ## Building AQL
-
 	$ make clean
 	$ make
 
