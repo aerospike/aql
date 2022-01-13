@@ -100,7 +100,7 @@ CFLAGS += -DAQL_VERSION=\"$(shell git describe)\"
 
 .DEFAULT_GOAL := all
 
-all: jansson aql
+all: toml jansson aql
 
 LEXER_SRC = sql-lexer.c
 .SECONDARY: $(LEXER_SRC)
@@ -141,6 +141,14 @@ $(JANSSON_PATH)/configure:
 
 $(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
 	cd jansson && ./configure
+
+
+.PHONY: toml
+toml: $(TOML_PATH)/libtoml.a $(TOML_PATH)/toml.o
+
+$(TOML_PATH)/libtoml.a $(TOML_PATH)/toml.o:
+	$(MAKE) -C toml
+
 
 install:
 	if [ ! -e /opt/aerospike/bin ]; then mkdir -p /opt/aerospike/bin; fi
