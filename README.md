@@ -2,31 +2,25 @@
 
 A SQL-like command-line interface to the Aerospike database.
 
-## Build Prerequisites
+### Ubuntu 20 and Debian 10
+```
+$ sudo apt-get install libreadline8 libreadline-dev flex
+```
 
-- curl
-- zip
-- OpenSSL >= 1.1.1k
+### Ubuntu 18 and Debian 9
+```
+$ sudo apt-get install libreadline7 libreadline-dev flex
+```
 
-### Ubuntu 18+ and Debian 8+
-
+### Debian 8
 ```
 $ sudo apt-get install libreadline6 libreadline-dev flex
-
-Note for debian:9 and ubuntu 18 use libreadline7
-
-For Packaging
-
-$ apt-get install zip rsync fakeroot 
 ```
+
 
 ### Red Hat Enterprise Linux and CentOS 7+ or Oracle Linux (Using Curl)
 ```
 $ yum -y install readline readline-devel flex which
-
-For Packaging
-
-$ yum -y install zip rpmdevtools
 ```
 
 ### Build the C client
@@ -39,9 +33,10 @@ $ yum -y install zip rpmdevtools
 * Install the prerequisites of the C client, as described in its repo's README.
 * Build the C client, as described in its repo's README.
 * Set the `CLIENTREPO` environment variable to point to the `aerospike-client-c` directory.
+```
+$ export CLIENTREPO=path/to/aerospike-client-c
+```
 
-### Setting up jansson and toml
-	$ make init
 ## Building AQL
 	$ make clean
 	$ make

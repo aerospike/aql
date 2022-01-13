@@ -98,9 +98,9 @@ CFLAGS += -DAQL_VERSION=\"$(shell git describe)\"
 ## MAIN
 ##
 
-.DEFAULT_GOAL := aql
+.DEFAULT_GOAL := all
 
-all: aql
+all: jansson aql
 
 LEXER_SRC = sql-lexer.c
 .SECONDARY: $(LEXER_SRC)
@@ -132,10 +132,16 @@ aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
 	mkdir -p $(TARGET_BIN)/
 
-init:
-	cd jansson && autoreconf -i && ./configure && make
-	cd toml && make
-	
+.PHONY: jansson
+jansson: $(JANSSON_PATH)/Makefile
+	$(MAKE) -C jansson
+
+$(JANSSON_PATH)/configure:
+	cd jansson && autoreconf -i
+
+$(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
+	cd jansson && ./configure
+
 install:
 	if [ ! -e /opt/aerospike/bin ]; then mkdir -p /opt/aerospike/bin; fi
 	cp -p $(TARGET_BIN)/aql /opt/aerospike/bin/.
@@ -144,3 +150,12 @@ install:
 
 tags etags:
 	etags `find . $(JANSSON_PATH) -name "*.[chl]"`
+
+cleanmodules:
+	if [ -e '$(JANSSON_PATH)/Makefile' ]; then \
+		$(MAKE) -C jansson clean; \
+		$(MAKE) -C jansson distclean; \
+	fi; \
+
+.PHONY: cleanall
+cleanall: clean cleanmodules

@@ -1,3 +1,4 @@
 [submodule "jansson"]
 	path = jansson
 	url = git@github.com:aerospike/jansson.git
+	ignore = dirty
