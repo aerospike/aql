@@ -224,15 +224,15 @@ print_config_file_option()
 	fprintf(stdout, " --tls-certfile=TLS_CERTFILE <path>\n");
 	fprintf(stdout, "                      Path to the chain file for mutual authentication (if\n"
                     "                      Aerospike Cluster is supporting it).\n");
-	fprintf(stdout, " --tls-cert-blacklist <path>\n");
-	fprintf(stdout, "                      Path to a certificate blacklist file. The file should\n"
-                    "                      contain one line for each blacklisted certificate.\n"
-                    "                      Each line starts with the certificate serial number\n"
-                    "                      expressed in hex. Each entry may optionally specify\n"
-                    "                      the issuer name of the certificate (serial numbers are\n"
-                    "                      only required to be unique per issuer).Example:\n"
-                    "                      867EC87482B2\n"
-                    "                      /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA\n");
+	fprintf(stdout, " --tls-cert-blacklist <path> (DEPRECATED)\n");
+	fprintf(stdout, "                      Path to a certificate\n"
+					" 					   blacklist file. The file should contain one line for\n"
+					"					   each blacklisted certificate. Each line starts with\n" 
+					"					   the certificate serial number expressed in hex. Each\n" 
+					"					   entry may optionally specify the issuer name of the\n" 
+					"					   certificate (serial numbers are only required to be\n" 
+					"					   unique per issuer).Example: 867EC87482B2\n"
+					"					   /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA\n");
 
 	fprintf(stdout, " --tls-crl-check      Enable CRL checking for leaf certificate. An error\n"
                 	"                      occurs if a valid CRL files cannot be found in\n"
@@ -492,6 +492,7 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 			case 1008:
 				base->tls.cert_blacklist = safe_strdup(
 						base->tls.cert_blacklist, optarg);
+				fprintf(stderr, "Warning: --tls-cert-blacklist is deprecated and will be removed in the next release.  Use a crl instead.\n\n");
 				break;
 
 			case 1010:
@@ -1148,7 +1149,7 @@ config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char
 
 		} else if (! strcasecmp("tls-cert-blacklist", name)) {
 			status = config_str(curtab, name, &c->base.tls.cert_blacklist);
-
+			fprintf(stderr, "Warning: --tls-cert-blacklist is deprecated and will be removed in the next release.  Use a crl instead.\n\n");
 		} else {
 			snprintf(errbuf, ERR_BUF_SIZE, "Unknown parameter `%s` in `%s` section.\n", name,
 					cluster);
