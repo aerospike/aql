@@ -146,13 +146,6 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 	                                                "INTEGER": "UNKNOWN")))),
 	                true));
 
-	as_hashmap_set(&m, (as_val*)as_string_new_strdup("POLICY_REPLICA"),
-	        (as_val*)as_string_new(
-	                strdup(c->replica_any ?
-	                        "AS_POLICY_REPLICA_ANY":
-	                        "AS_POLICY_REPLICA_MASTER"),
-	                true));
-
 	as_hashmap_set(&m, (as_val*)as_string_new_strdup("POLICY_KEY"),
 	        (as_val*)as_string_new(
 	                strdup((p->key.vt == ASQL_VALUE_TYPE_EDIGEST ||

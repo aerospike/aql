@@ -187,6 +187,8 @@ aql_admin(asql_config* c, aconfig* ac)
 	else {
 		g_renderer->render_error(status, as_error_string(status), NULL);
 	}
+
+	fprintf(stderr, "Warning: Managing users and roles has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
 	return status;
 }
 

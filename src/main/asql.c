@@ -28,12 +28,10 @@
 #include <asql_admin.h>
 #include <asql_info.h>
 #include <asql_key.h>
-#include <asql_operate.h>
 #include <asql_parser.h>
 #include <asql_print.h>
 #include <asql_query.h>
 #include <asql_scan.h>
-#include <asql_slap.h>
 #include <asql_truncate.h>
 
 
@@ -46,7 +44,6 @@ typedef aconfig* (* parse_fn)(tokenizer* tknzr);
 typedef void (* destroy_fn)(aconfig* ac);
 
 typedef struct asql_cmd_file_desc {
-	pthread_mutex_t lock;
 	FILE* fp;
 	asql_config* c;
 } asql_cmd_file_desc;
@@ -57,12 +54,6 @@ typedef struct {
 	parse_fn fn;
 } parse_entry;
 
-
-//=========================================================
-// Globals.
-//
-
-pthread_mutex_t g_asql_parser_lock = PTHREAD_MUTEX_INITIALIZER;
 
 //=========================================================
 // Forward Declarations.
@@ -81,7 +72,6 @@ static void destroy_skconfig(aconfig* ac);
 static void destroy_infoconfig(aconfig* ac);
 static void destroy_scanconfig(aconfig* ac);
 static void destroy_runfileconfig(aconfig* ac);
-static void destroy_opconfig(aconfig* ac);
 static void destroy_admconfig(aconfig* ac);
 static void destroy_truncateconfig(aconfig* ac);
 
@@ -97,7 +87,6 @@ const op_fn op_map[OP_MAX] = {
 	asql_scan,
 	runfile,
 	aql_admin,
-	aql_operate,
 	asql_truncate,
 };
 
@@ -107,7 +96,6 @@ const parse_entry parse_table[ASQL_OP_MAX] = {
 	{ "DELETE", ASQL_OP_DELETE, aql_parse_delete },
 	{ "TRUNCATE", ASQL_OP_TRUNCATE, aql_parse_truncate },
 	{ "EXECUTE", ASQL_OP_EXECUTE, aql_parse_execute },
-	{ "OPERATE", ASQL_OP_OPERATE, aql_parse_operate },
 
 	{ "SELECT", ASQL_OP_SELECT, aql_parse_select },
 	{ "AGGREGATE", ASQL_OP_AGGREGATE, aql_parse_aggregate },
@@ -143,7 +131,6 @@ const destroy_fn destroy_table[OP_MAX] = {
 	destroy_scanconfig,
 	destroy_runfileconfig,
 	destroy_admconfig,
-	destroy_opconfig,
 	destroy_truncateconfig,
 };
 
@@ -178,20 +165,6 @@ destroy_aconfig(aconfig* ac)
 	return 0;
 }
 	
-void
-destroy_binop(binop* op)
-{
-	if (op->cmd) free(op->cmd);
-	if (op->bname) free(op->bname);
-	if (op->params) {
-		destroy_vector(op->params, false);
-		as_vector_destroy(op->params);
-	}
-	if (op->policy) {
-		destroy_vector(op->policy, true);
-		as_vector_destroy(op->policy);
-	}
-}
 
 int
 run(void* o)
@@ -276,13 +249,8 @@ parse_and_run(asql_config* c, char* cmd)
 		return true;
 	}
 
-	if (!c->slap) {
-		asql_op op = { .c = c, .ac = ac, .backout = false, };
-		run((void*)&op);
-	}
-	else {
-		asql_slap(c, ac);
-	}
+	asql_op op = { .c = c, .ac = ac, .backout = false, };
+	run((void*)&op);
 
 	destroy_aconfig(ac);
 	return true;
@@ -297,9 +265,7 @@ parse_and_run_file(asql_cmd_file_desc* des)
 	while (1) {
 
 		size_t cmd_sz;
-		pthread_mutex_lock(&des->lock);
 		int ret = (int)getline(&cmd, &cmd_sz, des->fp);
-		pthread_mutex_unlock(&des->lock);
 
 		if (ret == -1) {
 			break;
@@ -348,37 +314,20 @@ runfile(asql_config* c, aconfig* ac)
 	}
 
 	asql_cmd_file_desc des = {
-		.lock = PTHREAD_MUTEX_INITIALIZER,
 		.fp = fp,
 		.c = c
 	};
 
-	if (!c->slap) {
-		parse_and_run_file(&des);
-	}
-	else {
-		asql_slap_file(&des);
-	}
+	parse_and_run_file(&des);
 
 	fclose(fp);
 	return 0;
-}
-
-void*
-parse_and_run_file_th(void* arg)
-{
-	sleep(1); // Let asql spawn all the threads
-	int ret = 0;
-	asql_cmd_file_desc* des = (asql_cmd_file_desc*)arg;
-	parse_and_run_file(des);
-	pthread_exit((void*)&ret);
 }
 
 static aconfig*
 parse(char* cmd)
 {
 	asql_config* c = g_config;
-	pthread_mutex_lock(&g_asql_parser_lock);
 	tokenizer tknzr;
 	init_tokenizer(&tknzr, cmd);
 	char* ftok = tknzr.tok;
@@ -409,7 +358,6 @@ parse(char* cmd)
 
 End:
 	destroy_tokenizer(&tknzr);
-	pthread_mutex_unlock(&g_asql_parser_lock);
 	return ac;
 }
 
@@ -533,23 +481,6 @@ destroy_runfileconfig(aconfig* ac)
 	runfile_config* r = (runfile_config*)ac;
 	if (r->fname) free(r->fname);
 	free(r);
-}
-
-static void
-destroy_opconfig(aconfig* ac)
-{
-	operate_config* o = (operate_config*)ac;
-
-	if (o->ns) free(o->ns);
-	if (o->set) free(o->set);
-	if (o->binops) {
-		for (uint16_t i = 0; i < o->binops->size; i++) {
-			destroy_binop(as_vector_get(o->binops, i));
-		}
-		as_vector_destroy(o->binops);
-	}
-	asql_free_value(&o->key);
-	free(o);
 }
 
 static void

@@ -39,12 +39,11 @@ typedef struct {
 	print_fn fn;
 } print_entry;
 
+#define AQL_VERSION "dev" // overwritten by makefile with 'git describe'
 
 //=========================================================
 // Forward Declarations.
 //
-
-extern void asql_print_ops(char* indent);
 
 static void print_print_help();
 static void print_ddl_help();
@@ -65,7 +64,6 @@ const print_entry print_table[ASQL_OP_MAX] = {
 	{ "DELETE", print_dml_help },
 	{ "TRUNCATE", print_dml_help },
 	{ "EXECUTE", print_dml_help },
-	{ "OPERATE", print_dml_help },
 
 	{ "SELECT", print_query_help },
 	{ "AGGREGATE", print_query_help },
@@ -162,7 +160,7 @@ print_help(const char* cmd, bool bShowOptions)
 static void
 print_print_help()
 {
-	fprintf(stdout, "        PRINT <string_to_echo>\n");
+	fprintf(stdout, "        PRINT <string_to_echo> (DEPRECATED)\n");
 	fprintf(stdout, "            Echo the given input.\n");
 	fprintf(stdout, "            Example:\n");
 	fprintf(stdout, "            \n");
@@ -174,7 +172,7 @@ print_print_help()
 static void
 print_ddl_help()
 {
-	fprintf(stdout, "  DDL\n");
+	fprintf(stdout, "  DDL (DEPRECATED)\n");
 	fprintf(stdout, "      CREATE INDEX <index> ON <ns>[.<set>] (<bin>) NUMERIC|STRING|GEO2DSPHERE\n");
 	fprintf(stdout, "      CREATE LIST/MAPKEYS/MAPVALUES INDEX <index> ON <ns>[.<set>] (<bin>) NUMERIC|STRING|GEO2DSPHERE\n");
 	fprintf(stdout, "      DROP INDEX <ns>[.<set>] <index>\n");
@@ -195,7 +193,7 @@ print_ddl_help()
 	fprintf(stdout, "          REGISTER MODULE '~/test.lua' \n");
 	fprintf(stdout, "          REMOVE MODULE test.lua\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "  USER ADMINISTRATION\n");
+	fprintf(stdout, "  USER ADMINISTRATION (DEPRECATED)\n");
 	fprintf(stdout, "      CREATE USER <user> PASSWORD <password> ROLE[S] <role1>,<role2>...\n");
 	fprintf(stdout, "          pre-defined roles: read|read-write|read-write-udf|sys-admin|user-admin\n");
 	fprintf(stdout, "      DROP USER <user>\n");
@@ -281,32 +279,6 @@ print_dml_help()
 	fprintf(stdout, "          EXECUTE myudfs.udf1(2) ON test.demo\n");
 	fprintf(stdout, "          EXECUTE myudfs.udf1(2) ON test.demo WHERE PK = 'key1'\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "  OPERATE\n");
-	fprintf(stdout, "      OPERATE <op(<bin>, params...)>[with_policy(<map policy>),] [<op(<bin>, params...)> with_policy (<map policy>) ...] ON <ns>[.<set>] where PK=<key>\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "          <op> name of operation to perform.\n");
-	fprintf(stdout, "          <bin> is the name of a bin.\n");
-	fprintf(stdout, "          <params> parameters for operation.\n");
-	fprintf(stdout, "          <map policy> map operation policy.\n");
-	fprintf(stdout, "          <ns> is the namespace for the records to be queried.\n");
-	fprintf(stdout, "          <set> is the set name for the record to be queried.\n");
-	fprintf(stdout, "          <key> is the record's primary key.\n");
-	fprintf(stdout, "      \n");
-	asql_print_ops ("      ");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "      MAP_POLICY\n");
-	fprintf(stdout, "          AS_MAP_UNORDERED\n");
-	fprintf(stdout, "          AS_MAP_KEY_ORDERED\n");
-	fprintf(stdout, "          AS_MAP_KEY_VALUE_ORDERED\n");
-	fprintf(stdout, "          AS_MAP_UPDATE\n");
-	fprintf(stdout, "          AS_MAP_UPDATE_ONLY\n");
-	fprintf(stdout, "          AS_MAP_CREATE_ONLY\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "      Examples:\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "          OPERATE LIST_APPEND(listbin, 1), LIST_APPEND(listbin2, 10) ON test.demo where PK = 'key1'\n");
-	fprintf(stdout, "          OPERATE LIST_POP_RANGE(listbin, 1, 10) ON test.demo where PK = 'key1'\n");
-	fprintf(stdout, "      \n");
 	fprintf(stdout, "      \n");
 }
 
@@ -382,16 +354,16 @@ print_admin_help()
 {
 	fprintf(stdout, "  INFO\n");
 	fprintf(stdout, "      SHOW NAMESPACES | SETS | BINS | INDEXES\n" );
-	fprintf(stdout, "      SHOW SCANS | QUERIES\n" );
-	fprintf(stdout, "      STAT NAMESPACE <ns> | INDEX <ns> <indexname>\n");
-	fprintf(stdout, "      STAT SYSTEM\n");
-	fprintf(stdout, "      ASINFO <ASInfoCommand>\n");
+	fprintf(stdout, "      (DEPRECATED) SHOW SCANS | QUERIES\n" );
+	fprintf(stdout, "      (DEPRECATED) STAT NAMESPACE <ns> | INDEX <ns> <indexname>\n");
+	fprintf(stdout, "      (DEPRECATED) STAT SYSTEM\n");
+	fprintf(stdout, "      (DEPRECATED) ASINFO <ASInfoCommand>\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "  JOB MANAGEMENT\n");
+	fprintf(stdout, "  JOB MANAGEMENT (DEPRECATED)\n");
 	fprintf(stdout, "      KILL_QUERY <transaction_id>\n");
 	fprintf(stdout, "      KILL_SCAN <scan_id>\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "  USER ADMINISTRATION\n");
+	fprintf(stdout, "  USER ADMINISTRATION (DEPRECATED)\n");
 	fprintf(stdout, "      SHOW USER [<user>]\n");
 	fprintf(stdout, "      SHOW USERS\n");
 	fprintf(stdout, "      SHOW ROLE <role>\n");

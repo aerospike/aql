@@ -31,11 +31,9 @@
 #include <asql_conf.h>
 #include <asql_info.h>
 #include <asql_key.h>
-#include <asql_operate.h>
 #include <asql_print.h>
 #include <asql_query.h>
 #include <asql_scan.h>
-#include <asql_slap.h>
 #include <asql_truncate.h>
 
 #include "renderer/json_renderer.h"
@@ -50,11 +48,10 @@
 
 extern void destroy_vector(as_vector* list, bool is_name);
 extern int destroy_aconfig(aconfig* ac);
-// TODO: Leaky !! not clean
-extern void destroy_binop(binop* op);
 
 void strncpy_and_strip_quotes(char* to, const char* from, size_t size);
 static bool is_quoted_literal(char* s);
+static bool check_illegal_characters(char* s);
 
 static bool lut_is_valid(char* s, uint64_t lut);
 static bool parse_lut(char* s, uint64_t* lut);
@@ -70,7 +67,6 @@ static bool parse_naked_name_list(tokenizer* tknzr, as_vector* v);
 static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname);
 //static bool parse_predicate(tokenizer* tknzr, asql_predicate* where);
 static bool parse_in(tokenizer* tknzr, asql_name* itype);
-static bool parse_binop(tokenizer* tknzr, binop* op);
 static char* parse_module(tokenizer* tknzr, bool filename_only);
 static char* parse_module_pathname(tokenizer* tknzr);
 static char* parse_module_filename(tokenizer* tknzr);
@@ -174,6 +170,11 @@ aql_parse_insert(tokenizer* tknzr)
 	if (!parse_ns_and_set(tknzr, &ns, &set)) {
 		goto ERROR;
 	}
+
+	if (check_illegal_characters(ns) || check_illegal_characters(set)) {
+		goto ERROR;
+	}
+
 	if (set) {
 		GET_NEXT_TOKEN_OR_GOTO(ERROR)
 	}
@@ -184,6 +185,13 @@ aql_parse_insert(tokenizer* tknzr)
 	bnames = as_vector_create(sizeof(asql_name), 5);
 	if (!parse_name_list(tknzr, bnames, true)) {
 		goto ERROR;
+	}
+
+	for (int i = 0; i < bnames->size; i++) {
+		if (check_illegal_characters(as_vector_get_ptr(bnames, i)))
+		{
+			goto ERROR;
+		}
 	}
 
 	// Must have at least one bin that is not a primary key.
@@ -226,10 +234,9 @@ aql_parse_insert(tokenizer* tknzr)
 
 
 	if (p->key.type == AS_DOUBLE) {
-		fprintf(stderr, "Unsupported command format - PK cannot be floating point value.\n");
-		fprintf(stderr, "Make sure string values are enclosed in quotes.\n");
-		fprintf(stderr, "\n");
-		goto ERROR_NO_PRED;
+		char* err_msg = "PK cannot be floating point value";
+		g_renderer->render_error(-1, err_msg, NULL);
+		goto ERROR;
 	}
 
 	p->i.bnames = bnames;
@@ -239,7 +246,6 @@ aql_parse_insert(tokenizer* tknzr)
 
 ERROR:
 	predicting_parse_error(tknzr);
-ERROR_NO_PRED:
 	if (ns) free(ns);
 	if (set) free(set);
 
@@ -361,67 +367,6 @@ aconfig*
 aql_parse_execute(tokenizer* tknzr)
 {
 	return parse_query(tknzr, ASQL_OP_EXECUTE);
-}
-
-aconfig*
-aql_parse_operate(tokenizer* tknzr)
-{
-	operate_config* o = malloc(sizeof(operate_config));
-	memset(o, 0, sizeof(operate_config));
-
-	o->type = OPERATE_OP;
-	o->optype = ASQL_OP_OPERATE;
-
-	o->binops = as_vector_create(sizeof(binop), 5);
-
-	while (1) {
-		binop op;
-		memset(&op, 0, sizeof(binop));
-
-		if (!parse_binop(tknzr, &op)) {
-			goto ERROR;
-		}
-
-		as_vector_append(o->binops, &op);
-
-		if (!tknzr->tok) {
-			goto ERROR;
-		}
-
-		if (strcmp(tknzr->tok, ",")) {
-			break;
-		}
-	}
-
-	if (strcasecmp(tknzr->tok, "ON")) {
-		goto ERROR;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_ns_and_set(tknzr, &o->ns, &o->set)) {
-		goto ERROR;
-	}
-	if (o->set) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	}
-	else if (!tknzr->tok) {
-		goto ERROR;
-	}
-
-	if (strcasecmp(tknzr->tok, "WHERE")) {
-		goto ERROR;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_pkey(tknzr, &o->key)) {
-		goto ERROR;
-	}
-
-	return (aconfig*)o;
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)o);
-	return NULL;
 }
 
 aconfig*
@@ -739,7 +684,8 @@ aql_parserun_print(tokenizer* tknzr)
 	if (printCmd) {
 		free(printCmd);
 	}
-	fprintf(stdout, "\n");
+	fprintf(stdout, "\n\n");
+	fprintf(stderr, "Warning: The PRINT command has been deprecated and will be removed in the next release of aql.\n"); 
 	return NULL;
 }
 
@@ -748,6 +694,7 @@ aql_parserun_system(tokenizer* tknzr)
 {
 	char* syscmd = strdup(tknzr->ocmd);
 	char* cmd = syscmd + 7;
+
 	if (cmd) {
 		fprintf(stdout, "%s\n", cmd);
 		int rv = system(cmd);
@@ -765,10 +712,13 @@ aql_parserun_system(tokenizer* tknzr)
 			        "Error executing system command. Command is passed is NULL.\n");
 		}
 	}
+
 	if (syscmd) {
 		free(syscmd);
 	}
-	fprintf(stdout, "\n");
+
+	fprintf(stdout, "\n\n");
+	fprintf(stderr, "Warning: The SYSTEM command has been deprecated and will be removed in the next release of aql.\n");
 	return NULL;
 }
 
@@ -892,6 +842,22 @@ is_quoted_literal(char* s)
 	return iql;
 }
 
+// Does not check for all illegal character in https://docs.aerospike.com/guide/limitations
+// just the ones that commonly mess up the info protocol
+static bool
+check_illegal_characters(char *s)
+{
+	char *c = NULL;
+	if ((c = strstr(s, ";")) || (c = strstr(s, ":")))
+	{
+		char err_msg[25];
+		snprintf(err_msg, 25, "Illegal character - '%c'", (char)c[0]);
+		g_renderer->render_error(-1, err_msg, NULL);
+		return true;
+	}
+	return false;
+}
+
 static bool
 lut_is_valid(char *lut_str, uint64_t lut)
 {
@@ -954,7 +920,8 @@ parse_name(char* s, asql_name* name, bool allow_empty)
 		return false;
 	}
 
-	if (len < 2) {
+	if (len < 2)
+	{
 		*name = strdup(s);
 		return true;
 	}
@@ -1306,69 +1273,6 @@ parse_in(tokenizer* tknzr, asql_name* itype)
 	return true;
 }
 
-// NB: Does 1 token look ahead.
-static bool
-parse_binop(tokenizer* tknzr, binop* op)
-{
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	op->cmd = strdup(tknzr->tok);
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (strcmp(tknzr->tok, "(")) {
-		goto ERROR;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (strcmp(tknzr->tok, ")")) {
-		if (!parse_name(tknzr->tok, &op->bname, true)) {
-			return false;
-		}
-
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (strcmp(tknzr->tok, ")")) {
-			if (strcmp(tknzr->tok, ",")) {
-				goto ERROR;
-			}
-
-			GET_NEXT_TOKEN_OR_GOTO(ERROR)
-			op->params = as_vector_create(sizeof(asql_value), 5);
-			while (1) {
-				asql_value value;
-				if (parse_expression(tknzr, &value)) {
-					goto ERROR;
-				}
-				as_vector_append(op->params, &value);
-
-				GET_NEXT_TOKEN_OR_GOTO(ERROR)
-				if (strcmp(tknzr->tok, ",")) {
-					if (strcmp(tknzr->tok, ")")) {
-						goto ERROR;
-					}
-					break;
-				}
-				GET_NEXT_TOKEN_OR_GOTO(ERROR)
-			}
-
-		}
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-
-	if (!strcmp(tknzr->tok, "with_policy")) {
-		op->policy = as_vector_create(sizeof(asql_name), 2);
-
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name_list(tknzr, op->policy, false)) {
-			goto ERROR;
-		}
-		get_next_token(tknzr);
-	}
-
-	return true;
-ERROR:
-	destroy_binop(op);
-	return false;
-}
 
 static char*
 parse_module(tokenizer* tknzr, bool filename_only)

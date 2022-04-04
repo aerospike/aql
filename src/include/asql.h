@@ -53,9 +53,8 @@ typedef enum {
 	SCAN_OP,
 	RUNFILE_OP,
 	ADMIN_OP,
-	OPERATE_OP,
 	TRUNCATE_OP,
-	OP_MAX = 8
+	OP_MAX = 7
 } atype;
 
 typedef enum {
@@ -64,7 +63,6 @@ typedef enum {
 	ASQL_OP_DELETE,
 	ASQL_OP_TRUNCATE,
 	ASQL_OP_EXECUTE,
-	ASQL_OP_OPERATE,
 
 	ASQL_OP_SELECT,
 	ASQL_OP_AGGREGATE,
@@ -92,7 +90,7 @@ typedef enum {
 	ASQL_OP_PRINT,
 	ASQL_OP_SYSTEM,
 
-	ASQL_OP_MAX = 26
+	ASQL_OP_MAX = 25
 } asql_optype;
 
 typedef struct asql_base_config {
@@ -124,20 +122,12 @@ typedef struct asql_config {
 	asql_base_config base;
 
 	// Operation specific config with set option.
-	bool use_smd;
 	int record_ttl_sec;
 	bool record_print_metadata;
-	bool replica_any;
 	bool key_send;
 	bool durable_delete;
 	int scan_records_per_second;
 	bool no_bins;
-	bool linearize_read;
-
-	// Hidden Config
-	bool slap;
-	int threads;
-	uint64_t iteration;
 
 
 } asql_config;

@@ -169,14 +169,6 @@ key_select(asql_config* c, pk_config* p)
 		read_policy.base.socket_timeout = c->base.socket_timeout_ms;
 	}
 
-	if (c->replica_any) {
-		read_policy.replica = AS_POLICY_REPLICA_ANY;
-	}
-
-	if (c->linearize_read) {
-		read_policy.read_mode_sc = AS_POLICY_READ_MODE_SC_LINEARIZE;
-	}
-
 	if (p->key.vt == ASQL_VALUE_TYPE_EDIGEST
 		   || p->key.vt == ASQL_VALUE_TYPE_DIGEST) {
 		read_policy.key = AS_POLICY_KEY_DIGEST;

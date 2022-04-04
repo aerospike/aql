@@ -110,12 +110,6 @@ static struct option options[] =
 	{"socket-timeout", required_argument, 0, 1013},
 	{"udfuser", required_argument, 0, 'u'},
 
-
-	// Hidden from help
-	{"slap", no_argument, 0, 'S'},
-	{"threads", required_argument, 0, 't'},
-	{"iterations", required_argument, 0, 'i'},
-
 	// Legacy
 	{"tlsEnable", no_argument, 0, 1000},
 	{"tlsEncryptOnly", no_argument, 0, 1001},
@@ -300,12 +294,6 @@ print_config_help(int argc, char* argv[])
 	fprintf(stdout, "                      Read this file after default configuration file.\n");
 	fprintf(stdout, " --only-config-file=path\n");
 	fprintf(stdout, "                      Read only this configuration file.\n");
-
-#if 0
-	fprintf(stdout, " -S, --slap           Enable SLAP mode for queries. Default: disabled\n");
-	fprintf(stdout, " -t, --threads <n>    Number of batch threads for SLAP mode. Default: 10\n");
-	fprintf(stdout, " -i, --iterations <n> Number of iterations per thread for SLAP mode. Default: 10\n");
-#endif
 	fprintf(stdout, "\n\n");
 }
 
@@ -562,20 +550,6 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 
 			case 'u':
 				base->lua_userpath = safe_strdup(base->lua_userpath, optarg);
-				break;
-
-
-				// Hidden from help
-			case 'S':
-				conf->slap = true;
-				break;
-
-			case 't':
-				conf->threads = atoi(optarg);
-				break;
-
-			case 'i':
-				conf->iteration = atoi(optarg);
 				break;
 
 			default:
@@ -1357,10 +1331,6 @@ config_default(asql_config* c, const char* instance)
 	c->base.user = NULL;
 	c->base.password = strdup(DEFAULTPASSWORD);
 
-	// SLAP mode
-	c->slap = false;
-	c->iteration = 10;
-	c->threads = 10;
 	memset(&c->base.tls, 0, sizeof(as_config_tls));
 }
 

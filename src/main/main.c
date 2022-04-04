@@ -116,15 +116,12 @@ main(int argc, char** argv)
 		ASQL_SET_OPTION_STRING(base.lua_userpath, "LUA_USERPATH", "<path>", "/opt/aerospike/usr/udf/lua", NULL),
 
 		// Operation specific set options, not available at command line.
-		ASQL_SET_OPTION_BOOL(use_smd, "USE_SMD", NULL, false),
 		ASQL_SET_OPTION_INT(record_ttl_sec, "RECORD_TTL", "time in sec", 0),
 		ASQL_SET_OPTION_BOOL(record_print_metadata, "RECORD_PRINT_METADATA", "prints record metadata", false),
-		ASQL_SET_OPTION_BOOL(replica_any, "REPLICA_ANY", NULL, false),
-		ASQL_SET_OPTION_BOOL(key_send, "KEY_SEND", NULL, false),
+		ASQL_SET_OPTION_BOOL(key_send, "KEY_SEND", NULL, true),
 		ASQL_SET_OPTION_BOOL(durable_delete, "DURABLE_DELETE", NULL, false),
 		ASQL_SET_OPTION_INT(scan_records_per_second, "SCAN_RECORDS_PER_SECOND", "Limit returned records per second (rps) rate for each server", 0),
 		ASQL_SET_OPTION_BOOL(no_bins, "NO_BINS", "No bins as part of scan and query result", false),
-		ASQL_SET_OPTION_BOOL(linearize_read, "LINEARIZE_READ", "Make read linearizable, applicable only for namespace with strong_consistency enabled.", false),
 
 		{.offset=-1}
 	};
