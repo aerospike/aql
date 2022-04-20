@@ -1,0 +1,29 @@
+name: Mac Build CI
+
+on:
+  repository_dispatch:
+    types: mac-build
+  push:
+    branches: [actionsHub, master, test-ready, TOOLS-1994-build-mac-in-action]
+  pull_request:
+    branches: [actionsHub]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+        submodules: recursive
+      - name: Setup Client with XCode
+        run: |
+          c-client/xcode/prepare_xcode
+      - name: Build aql
+        run: |
+          make
+      - name: Sanity Test tools
+        run: |
+          build/bin/aql -e "info" 2>&1 | grep "Not able to connect"
+      - uses: actions/upload-artifact@v3
+        with:
+          name: aql
+          path: target/Darwin-x86_64/bin/aql

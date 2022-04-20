@@ -2,3 +2,6 @@
 	path = jansson
 	url = git@github.com:aerospike/jansson.git
 	ignore = dirty
+[submodule "c-client"]
+	path = c-client
+	url = git@github.com:aerospike/aerospike-client-c.git
