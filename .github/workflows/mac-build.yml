@@ -15,9 +15,9 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-      - name: Setup Client with XCode
-        run: |
-          c-client/xcode/prepare_xcode
+      # - name: Setup Client with XCode
+      #   run: |
+      #     c-client/xcode/prepare_xcode
       - name: Build aql
         run: |
           make
