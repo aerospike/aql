@@ -15,9 +15,13 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-      # - name: Setup Client with XCode
-      #   run: |
-      #     c-client/xcode/prepare_xcode
+      - name: Download Client Deps
+        run: |
+          brew update
+          brew install wget
+          brew install automake
+          brew install libtool
+          brew install openssl@1.1
       - name: Build aql
         run: |
           make
