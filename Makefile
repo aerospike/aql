@@ -5,15 +5,15 @@ include project/build.makefile
 # endif
 
 # CLIENT_PATH = $(CLIENTREPO)
-CLIENT_PATH = ./c-client
-CLIENTREPO = $(CLIENT_PATH)
-JANSSON_PATH = ./jansson
+CLIENT_PATH = ./modules/c-client
+# CLIENTREPO = $(CLIENT_PATH)
+JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
 DIR_INCLUDE = ../include $(CLIENT_PATH)/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/common/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/mod-lua/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/base/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
 INCLUDES = $(DIR_INCLUDE:%=-I%) 
 
 CFLAGS = -std=gnu99 -g -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
