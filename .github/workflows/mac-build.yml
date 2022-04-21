@@ -20,8 +20,8 @@ jobs:
           brew install automake
       - name: Cache C Client
         uses: actions/cache@v3
-          env:
-            cache-name: cache-c-client
+        env:
+          cache-name: cache-c-client
         with:
           # npm cache files are stored in `~/.npm` on Linux/macOS
           path: |
@@ -29,8 +29,8 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('c-client') }}
       - name: Cache Jansson
         uses: actions/cache@v3
-          env:
-            cache-name: cache-jansson
+        env:
+          cache-name: cache-jansson
         with:
           # npm cache files are stored in `~/.npm` on Linux/macOS
           path: |
