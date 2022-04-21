@@ -18,11 +18,8 @@ jobs:
       - name: Checkout tags for version
         run: |
           git fetch --tags
-          git describe --tags
           git describe --tags --always
           git fetch --prune --unshallow --tag
-          git describe
-          git describe --tags
           git describe --tags --always
       - name: Download C Client Deps
         run: |
