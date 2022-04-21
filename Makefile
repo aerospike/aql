@@ -136,20 +136,20 @@ aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 c-client: $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a
 
 $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a:
-	$(MAKE) -C c-client
+	$(MAKE) -C $(CLIENT_PATH)
 
 
 .PHONY: jansson
 jansson: $(JANSSON_PATH)/src/.libs/libjansson.a 
 
 $(JANSSON_PATH)/src/.libs/libjansson.a: $(JANSSON_PATH)/Makefile 
-	$(MAKE) -C jansson
+	$(MAKE) -C $(JANSSON_PATH)
 
 $(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
-	cd jansson && ./configure
+	cd $(JANSSON_PATH) && ./configure
 
 $(JANSSON_PATH)/configure:
-	cd jansson && autoreconf -i
+	cd $(JANSSON_PATH) && autoreconf -i
 
 .INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 

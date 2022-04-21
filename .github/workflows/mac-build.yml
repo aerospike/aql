@@ -10,15 +10,13 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-10.15
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
       - name: Checkout tags for version
         run: |
-          git fetch --tags
-          git describe --tags --always
           git fetch --prune --unshallow --tag
           git describe --tags --always
       - name: Download C Client Deps
