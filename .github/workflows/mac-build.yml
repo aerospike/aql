@@ -24,7 +24,6 @@ jobs:
         git describe
         git describe --tags
         git describe --tags --always
-
       - name: Download C Client Deps
         run: |
           brew install automake
