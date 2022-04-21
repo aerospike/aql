@@ -18,21 +18,17 @@ jobs:
       - name: Download C Client Deps
         run: |
           brew install automake
-      - name: Cache C Client
-        id: cache-aws-sdk-cpp
-        uses: actions/cache@v2
-        env:
-          cache-name: aws-sdk-cpp
-        with:
-          path: aws-sdk-cpp
-          key: aws-sdk-cpp-v2-${{ runner.os }}
       - name: Build aql
         run: |
           make
-      - name: Sanity Test tools
-        run: |
-          target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Not able to connect"
+          ls target
+          ls target/Darwin-x86_64/
+          ls target/Darwin-x86_64/bin
       - uses: actions/upload-artifact@v3
         with:
           name: aql
           path: target/Darwin-x86_64/bin/aql
+      - name: Sanity Test tools
+        run: |
+          ls
+          target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Not able to connect"
