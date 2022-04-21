@@ -21,14 +21,11 @@ jobs:
       - name: Build aql
         run: |
           make
-          ls target
-          ls target/Darwin-x86_64/
-          ls target/Darwin-x86_64/bin
       - uses: actions/upload-artifact@v3
         with:
           name: aql
           path: target/Darwin-x86_64/bin/aql
       - name: Sanity Test tools
         run: |
-          ls
+          target/Darwin-x86_64/bin/aql -e "info"
           target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Not able to connect"
