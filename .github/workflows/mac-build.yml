@@ -15,7 +15,16 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-      - run: git fetch --tags
+      - run: |
+        git fetch --tags
+        git describe
+        git describe --tags
+        git describe --tags --always
+        git fetch --prune --unshallow --tag
+        git describe
+        git describe --tags
+        git describe --tags --always
+
       - name: Download C Client Deps
         run: |
           brew install automake
@@ -25,16 +34,16 @@ jobs:
           cache-name: cache-c-client
         with:
           path: |
-            c-client/target
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('c-client') }}
+            modules/c-client/target
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
       - name: Cache Jansson
         uses: actions/cache@v3
         env:
           cache-name: cache-jansson
         with:
           path: |
-            jansson/src
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('jansson') }}
+            modules/jansson/src
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
       - name: Build aql
         run: |
           make
