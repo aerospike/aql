@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
+      - run: git fetch --tags
       - name: Download C Client Deps
         run: |
           brew install automake
