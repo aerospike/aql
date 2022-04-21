@@ -142,15 +142,16 @@ $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a:
 .PHONY: jansson
 jansson: $(JANSSON_PATH)/src/.libs/libjansson.a 
 
-$(JANSSON_PATH)/src/.libs/libjansson.a: $(JANSSON_PATH)/Makefile
+$(JANSSON_PATH)/src/.libs/libjansson.a: $(JANSSON_PATH)/Makefile 
 	$(MAKE) -C jansson
 
-$(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
+$(JANSSON_PATH)/Makefile: | $(JANSSON_PATH)/configure
 	cd jansson && ./configure
 
 $(JANSSON_PATH)/configure:
 	cd jansson && autoreconf -i
 
+.INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 
 .PHONY: toml
 toml: $(TOML_PATH)/libtoml.a $(TOML_PATH)/toml.o
