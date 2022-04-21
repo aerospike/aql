@@ -94,7 +94,7 @@ else
 endif
 
 # Set the AQL version from the latest Git tag.
-CFLAGS += -DAQL_VERSION=\"$(shell git describe)\"
+CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always)\"
 
 ##
 ## MAIN
