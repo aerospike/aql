@@ -23,7 +23,6 @@ jobs:
         env:
           cache-name: cache-c-client
         with:
-          # npm cache files are stored in `~/.npm` on Linux/macOS
           path: |
             c-client/target
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('c-client') }}
@@ -32,17 +31,16 @@ jobs:
         env:
           cache-name: cache-jansson
         with:
-          # npm cache files are stored in `~/.npm` on Linux/macOS
           path: |
             jansson/src/.libs
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('jansson') }}
       - name: Build aql
         run: |
           make
+      - name: Sanity Test tools
+        run: |
+          target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Failed to connect"
       - uses: actions/upload-artifact@v3
         with:
           name: aql
           path: target/Darwin-x86_64/bin/aql
-      - name: Sanity Test tools
-        run: |
-          target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Failed to connect"
