@@ -145,7 +145,7 @@ jansson: $(JANSSON_PATH)/src/.libs/libjansson.a
 $(JANSSON_PATH)/src/.libs/libjansson.a: $(JANSSON_PATH)/Makefile 
 	$(MAKE) -C jansson
 
-$(JANSSON_PATH)/Makefile: | $(JANSSON_PATH)/configure
+$(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
 	cd jansson && ./configure
 
 $(JANSSON_PATH)/configure:
