@@ -48,3 +48,4 @@ jobs:
         with:
           name: aql
           path: target/Darwin-x86_64/bin/aql
+          if-no-files-found: error
