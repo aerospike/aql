@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2021 Aerospike, Inc.
+ * Copyright 2015-2022 Aerospike, Inc.
  *
  * Portions may be licensed to Aerospike, Inc. under one or more contributor
  * license agreements.
@@ -38,8 +38,6 @@ typedef struct {
 	char* cmd;
 	print_fn fn;
 } print_entry;
-
-#define AQL_VERSION "dev" // overwritten by makefile with 'git describe'
 
 //=========================================================
 // Forward Declarations.
