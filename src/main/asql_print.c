@@ -39,8 +39,6 @@ typedef struct {
 	print_fn fn;
 } print_entry;
 
-#define AQL_VERSION "dev" // overwritten by makefile with 'git describe'
-
 //=========================================================
 // Forward Declarations.
 //
