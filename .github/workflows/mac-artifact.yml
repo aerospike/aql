@@ -35,7 +35,7 @@ jobs:
           cache-name: cache-aql
         with:
           path: |
-            ${{ inputs.submodule || '.' }}/target/
+            ${{ inputs.submodule || '.' }}/target
           key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
       - name: Download C Client Deps
         run: |
@@ -63,17 +63,16 @@ jobs:
         run: |
           cd ${{ inputs.submodule || '.' }}
           make
+      - name: Sanity Test tools
+        run: |
+          cd ${{ inputs.submodule || '.' }}
+          cd target/Darwin-x86_64/bin
+          ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Move artifacts to target dir HACK # This could be done in the makefile
-        if: steps.cache-aql.outputs.cache-hit != 'true'
         run: |
           cd ${{ inputs.submodule || '.' }}
           mkdir -p tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
           mv target/Darwin-x86_64/bin/* tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-      - name: Sanity Test tools
-        run: |
-          cd ${{ inputs.submodule || '.' }}
-          cd tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Get artifact name
         uses: haya14busa/action-cond@v1
         id: artifact-name
