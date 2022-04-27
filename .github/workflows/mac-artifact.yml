@@ -33,10 +33,11 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
+          cache-index: "1" # To clear the cache if needed.
         with:
           path: |
             ${{ inputs.submodule || '.' }}/target
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
       - name: Download C Client Deps
         run: |
           brew install automake
