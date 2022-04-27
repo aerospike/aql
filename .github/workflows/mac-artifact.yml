@@ -1,4 +1,4 @@
-name: Mac Build CI
+name: Mac Artifact
 
 on:
   repository_dispatch:
@@ -15,6 +15,8 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
+      - uses: kenchan0130/actions-system-info@master
+        id: system-info
       - name: Checkout tags for version
         run: |
           git fetch --prune --unshallow --tag
