@@ -33,7 +33,7 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
-          cache-index: "1" # To clear the cache if needed.
+          cache-index: "2" # To clear the cache if needed.
         with:
           path: |
             ${{ inputs.submodule || '.' }}/target
@@ -73,7 +73,7 @@ jobs:
         run: |
           cd ${{ inputs.submodule || '.' }}
           mkdir -p tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          mv target/Darwin-x86_64/bin/* tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          cp target/Darwin-x86_64/bin/* tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
       - name: Get artifact name
         uses: haya14busa/action-cond@v1
         id: artifact-name
