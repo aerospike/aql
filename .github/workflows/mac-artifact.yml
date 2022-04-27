@@ -67,12 +67,12 @@ jobs:
         if: steps.cache-aql.outputs.cache-hit != 'true'
         run: |
           cd ${{ inputs.submodule || '.' }}
-          mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          mv target/Darwin-x86_64/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          mkdir -p tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          mv target/Darwin-x86_64/bin/* tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
       - name: Sanity Test tools
         run: |
           cd ${{ inputs.submodule || '.' }}
-          cd target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          cd tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
           ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Get artifact name
         uses: haya14busa/action-cond@v1
@@ -84,4 +84,4 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.artifact-name.outputs.value }}
-          path: ${{ inputs.submodule || '.' }}/target
+          path: ${{ inputs.submodule || '.' }}/tmp/target
