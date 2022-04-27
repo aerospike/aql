@@ -25,6 +25,7 @@ jobs:
         id: system-info
       - name: Checkout tags for version
         run: |
+          cd ${{ inputs.submodule || '.' }}
           git fetch --prune --unshallow --tag
           git describe --tags --always
       - name: Cache Aql
