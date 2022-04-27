@@ -7,6 +7,12 @@ on:
     branches: [actionsHub, master, test-ready, TOOLS-1994-build-mac-in-action]
   pull_request:
     branches: [actionsHub]
+  workflow_call:
+    inputs:
+      submodule:
+        description: The directory of the submodule, if this workflow is being called on a submodule
+        required: false
+        type: string
 
 jobs:
   build:
