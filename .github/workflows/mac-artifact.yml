@@ -64,7 +64,7 @@ jobs:
         run: |
           cd ${{ inputs.submodule || '.' }}
           mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          mv target/Darwin-x86_64/bin/aql/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          mv target/Darwin-x86_64/bin/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
       - name: Get artifact name
         uses: haya14busa/action-cond@v1
         id: artifact-name
