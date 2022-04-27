@@ -1,0 +1,76 @@
+name: Mac Build CI
+
+on:
+  repository_dispatch:
+    types: mac-build
+  push:
+    branches: [actionsHub, master, test-ready, TOOLS-1994-build-mac-in-action]
+  pull_request:
+    branches: [actionsHub]
+
+jobs:
+  build:
+    runs-on: macos-10.15
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Checkout tags for version
+        run: |
+          git fetch --prune --unshallow --tag
+          git describe --tags --always
+      - name: Cache Aql
+        uses: actions/cache@v3
+        id: cache-aql
+        env:
+          cache-name: cache-aql
+        with:
+          path: |
+            ${{ inputs.submodule || '.' }}/target/
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
+      - name: Download C Client Deps
+        run: |
+          brew install automake
+      - name: Cache C Client
+        uses: actions/cache@v3
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        env:
+          cache-name: cache-c-client
+        with:
+          path: |
+            ${{ inputs.submodule || '.' }}/modules/c-client/target
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
+      - name: Cache Jansson
+        uses: actions/cache@v3
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        env:
+          cache-name: cache-jansson
+        with:
+          path: |
+            ${{ inputs.submodule || '.' }}/modules/jansson/src
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
+      - name: Build aql
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ inputs.submodule || '.' }}
+          make
+      - name: Sanity Test tools
+        run: |
+          cd ${{ inputs.submodule || '.' }}
+          target/Darwin-x86_64/bin/aql -e "info" 2>&1 | grep "Failed to connect"
+      - name: Move artifacts to target dir HACK # This could be done in the makefile
+        run: |
+          cd ${{ inputs.submodule || '.' }}
+          mkdir -p target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+          mv target/Darwin-x86_64/bin/aql/* target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
+      - name: Get artifact name
+        uses: haya14busa/action-cond@v1
+        id: artifact-name
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: ${{ inputs.submodule }}-binaries.tgz
+          if_false: binaries.tgz
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.artifact-name.outputs.value }}
+          path: ${{ inputs.submodule || '.' }}/target
