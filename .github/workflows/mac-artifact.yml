@@ -73,7 +73,7 @@ jobs:
         run: |
           cd ${{ inputs.submodule || '.' }}
           cd target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          aql -e "info" 2>&1 | grep "Failed to connect"
+          ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Get artifact name
         uses: haya14busa/action-cond@v1
         id: artifact-name
