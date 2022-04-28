@@ -23,8 +23,8 @@ jobs:
         id: aql-wd
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: aql
-          if_false: ${{ inputs.submodule }}/aql
+          if_true: ${{ inputs.submodule }}/aql
+          if_false: aql
       - uses: actions/checkout@v2
         with:
           submodules: recursive
