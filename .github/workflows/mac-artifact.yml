@@ -48,7 +48,7 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
-          cache-index: "3" # To clear the cache if needed.
+          cache-index: "4" # To clear the cache if needed.
         with:
           path: |
             ${{ steps.aql-wd.outputs.value }}/target
