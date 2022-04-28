@@ -18,14 +18,22 @@ jobs:
   build:
     runs-on: macos-10.15
     steps:
+      - name: Get artifact name
+        uses: haya14busa/action-cond@v1
+        id: aql-wd
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: aql
+          if_false: ${{ inputs.submodule }}/aql
       - uses: actions/checkout@v2
         with:
           submodules: recursive
+          path: ${{ steps.aql-wd.outputs.value }}
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Checkout tags for version
+        working-directory: ${{ steps.aql-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           git fetch --prune --unshallow --tag
           git describe --tags --always
       - name: Cache Aql
@@ -33,10 +41,10 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
-          cache-index: "2" # To clear the cache if needed.
+          cache-index: "3" # To clear the cache if needed.
         with:
           path: |
-            ${{ inputs.submodule || '.' }}/target
+            ${{ steps.aql-wd.outputs.value }}/target
           key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
       - name: Download C Client Deps
         run: |
@@ -48,7 +56,7 @@ jobs:
           cache-name: cache-c-client
         with:
           path: |
-            ${{ inputs.submodule || '.' }}/modules/c-client/target
+            ${{ steps.aql-wd.outputs.value }}/modules/c-client/target
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
       - name: Cache Jansson
         uses: actions/cache@v3
@@ -57,31 +65,19 @@ jobs:
           cache-name: cache-jansson
         with:
           path: |
-            ${{ inputs.submodule || '.' }}/modules/jansson/src
+            ${{ steps.aql-wd.outputs.value }}/modules/jansson/src
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
+        working-directory: ${{ steps.aql-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           make
       - name: Sanity Test tools
+        working-directory: ${{ steps.aql-wd.outputs.value }}
         run: |
-          cd ${{ inputs.submodule || '.' }}
           cd target/Darwin-x86_64/bin
           ./aql -e "info" 2>&1 | grep "Failed to connect"
-      - name: Move artifacts to target dir HACK # This could be done in the makefile
-        run: |
-          cd ${{ inputs.submodule || '.' }}
-          mkdir -p tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-          cp target/Darwin-x86_64/bin/* tmp/target/${{ steps.system-info.outputs.platform }}-${{ runner.arch }}/${{ runner.os }}-${{ steps.system-info.outputs.release }}
-      - name: Get artifact name
-        uses: haya14busa/action-cond@v1
-        id: artifact-name
-        with:
-          cond: ${{ inputs.submodule != '' }}
-          if_true: ${{ inputs.submodule }}-binaries
-          if_false: binaries
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ steps.artifact-name.outputs.value }}
-          path: ${{ inputs.submodule || '.' }}/tmp/target
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
+          path: ${{ steps.aql-wd.outputs.value }}/target/Darwin-x86_64/bin/aql
