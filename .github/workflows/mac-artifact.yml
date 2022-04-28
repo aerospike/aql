@@ -18,17 +18,24 @@ jobs:
   build:
     runs-on: macos-10.15
     steps:
+      - name: Get checkout directory
+        uses: haya14busa/action-cond@v1
+        id: checkout-dir
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
+          if_false: aql
       - name: Get aql working directory
         uses: haya14busa/action-cond@v1
         id: aql-wd
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: ${{ inputs.submodule }}
+          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
           if_false: aql
       - uses: actions/checkout@v2
         with:
-          submodules: recursive
-          path: ${{ steps.aql-wd.outputs.value }} # aql
+          submodules: recursive # for when inputs.submodule is populated
+          path: ${{ steps.checkout-dir.outputs.value }}
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Checkout tags for version
