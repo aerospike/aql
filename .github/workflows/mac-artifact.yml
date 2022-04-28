@@ -26,7 +26,6 @@ jobs:
           if_true: ${{ inputs.submodule }}
           if_false: aql
       - uses: actions/checkout@v2
-        if: inputs.submodule == ''
         with:
           submodules: recursive
           path: ${{ steps.aql-wd.outputs.value }} # aql
