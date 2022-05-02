@@ -36,13 +36,13 @@ jobs:
         with:
           submodules: recursive # for when inputs.submodule is populated
           path: ${{ steps.checkout-dir.outputs.value }}
+          fetch-depth: 0
+      - name: Print version
+        working-directory: ${{ steps.checkout-dir.outputs.value }}
+        run: |
+          git describe --tags --always
       - uses: kenchan0130/actions-system-info@master
         id: system-info
-      - name: Checkout tags for version
-        working-directory: ${{ steps.aql-wd.outputs.value }}
-        run: |
-          git fetch --prune --unshallow --tag
-          git describe --tags --always
       - name: Cache Aql
         uses: actions/cache@v3
         id: cache-aql
