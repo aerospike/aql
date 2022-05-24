@@ -847,6 +847,10 @@ is_quoted_literal(char* s)
 static bool
 check_illegal_characters(char *s)
 {
+	if (s == NULL) {
+		return false;
+	}
+
 	char *c = NULL;
 	if ((c = strstr(s, ";")) || (c = strstr(s, ":")))
 	{
