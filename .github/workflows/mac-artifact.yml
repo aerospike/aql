@@ -1,0 +1,94 @@
+name: Mac Artifact
+
+on:
+  repository_dispatch:
+    types: mac-build
+  push:
+    branches: [actionsHub, master, test-ready, TOOLS-1994-build-mac-in-action]
+  pull_request:
+    branches: [actionsHub]
+  workflow_call:
+    inputs:
+      submodule:
+        description: The directory of the submodule, if this workflow is being called on a submodule
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: macos-10.15
+    steps:
+      - name: Get checkout directory
+        uses: haya14busa/action-cond@v1
+        id: checkout-dir
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
+          if_false: aql
+      - name: Get aql working directory
+        uses: haya14busa/action-cond@v1
+        id: working-dir
+        with:
+          cond: ${{ inputs.submodule != '' }}
+          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
+          if_false: aql
+      - uses: actions/checkout@v2
+        with:
+          path: ${{ steps.checkout-dir.outputs.value }}
+          fetch-depth: 0
+      - name: Checkout ${{ steps.working-dir.outputs.value }}
+        working-directory: ${{ steps.checkout-dir.outputs.value }}
+        run: | 
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
+      - name: Print version
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        run: |
+          git describe --tags --always
+      - uses: kenchan0130/actions-system-info@master
+        id: system-info
+      - name: Cache Aql
+        uses: actions/cache@v3
+        id: cache-aql
+        env:
+          cache-name: cache-aql
+          cache-index: "4" # To clear the cache if needed.
+        with:
+          path: |
+            ${{ steps.working-dir.outputs.value }}/target
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
+      - name: Download C Client Deps
+        run: |
+          brew install automake
+      - name: Cache C Client
+        uses: actions/cache@v3
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        env:
+          cache-name: cache-c-client
+        with:
+          path: |
+            ${{ steps.working-dir.outputs.value }}/modules/c-client/target
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
+      - name: Cache Jansson
+        uses: actions/cache@v3
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        env:
+          cache-name: cache-jansson
+        with:
+          path: |
+            ${{ steps.working-dir.outputs.value }}/modules/jansson/src
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
+      - name: Build aql
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        run: |
+          make
+      - name: Sanity Test tools
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        run: |
+          cd target/Darwin-x86_64/bin
+          ./aql -e "info" 2>&1 | grep "Failed to connect"
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
+          path: ${{ steps.working-dir.outputs.value }}/target/Darwin-x86_64/bin/aql

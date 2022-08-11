@@ -1,17 +1,19 @@
 include project/build.makefile
 
-ifndef CLIENTREPO
-  $(error Missing required variable: CLIENTREPO. Please define the variable and try again.)
-endif
+# ifndef CLIENTREPO
+#   $(error Missing required variable: CLIENTREPO. Please define the variable and try again.)
+# endif
 
-CLIENT_PATH = $(CLIENTREPO)
-JANSSON_PATH = ./jansson
+# CLIENT_PATH = $(CLIENTREPO)
+CLIENT_PATH = ./modules/c-client
+# CLIENTREPO = $(CLIENT_PATH)
+JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
 DIR_INCLUDE = ../include $(CLIENT_PATH)/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/common/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/mod-lua/src/include
-DIR_INCLUDE += $(CLIENTREPO)/modules/base/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
 INCLUDES = $(DIR_INCLUDE:%=-I%) 
 
 CFLAGS = -std=gnu99 -g -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
@@ -92,7 +94,7 @@ else
 endif
 
 # Set the AQL version from the latest Git tag.
-CFLAGS += -DAQL_VERSION=\"$(shell git describe)\"
+CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always)\"
 
 ##
 ## MAIN
@@ -100,7 +102,7 @@ CFLAGS += -DAQL_VERSION=\"$(shell git describe)\"
 
 .DEFAULT_GOAL := all
 
-all: toml jansson aql
+all: toml jansson c-client aql
 
 LEXER_SRC = sql-lexer.c
 .SECONDARY: $(LEXER_SRC)
@@ -130,16 +132,26 @@ aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
 	mkdir -p $(TARGET_BIN)/
 
-.PHONY: jansson
-jansson: $(JANSSON_PATH)/Makefile
-	$(MAKE) -C jansson
+.PHONY: c-client
+c-client: $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a
 
-$(JANSSON_PATH)/configure:
-	cd jansson && autoreconf -i
+$(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a:
+	$(MAKE) -C $(CLIENT_PATH)
+
+
+.PHONY: jansson
+jansson: $(JANSSON_PATH)/src/.libs/libjansson.a 
+
+$(JANSSON_PATH)/src/.libs/libjansson.a: $(JANSSON_PATH)/Makefile 
+	$(MAKE) -C $(JANSSON_PATH)
 
 $(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
-	cd jansson && ./configure
+	cd $(JANSSON_PATH) && ./configure
 
+$(JANSSON_PATH)/configure:
+	cd $(JANSSON_PATH) && autoreconf -i
+
+.INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 
 .PHONY: toml
 toml: $(TOML_PATH)/libtoml.a $(TOML_PATH)/toml.o
@@ -162,6 +174,7 @@ cleanmodules:
 		$(MAKE) -C jansson clean; \
 		$(MAKE) -C jansson distclean; \
 	fi; \
+  $(MAKE) -C c-client clean
 
 .PHONY: cleanall
 cleanall: clean cleanmodules
