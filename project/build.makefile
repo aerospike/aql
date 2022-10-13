@@ -20,16 +20,8 @@ CFLAGS = -Werror
 # specificaly addresses an issue where openssl
 # uses the environment variable CC but AQL uses
 # the system resolved "cc"
-ifeq ($(CC),)
-CC = cc
-endif
-
-# if $(CC) was defined and $(LD) is not
-# set LD to CC so that the linker
-# matching the compiler is used
-ifeq ($(LD),)
-LD = $(CC)
-endif
+CC ?= cc
+LD := $(CC)
 
 LDFLAGS =
 
