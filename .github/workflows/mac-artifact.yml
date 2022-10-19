@@ -56,7 +56,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/target
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles(format('{0}/**/*.c', steps.working-dir.outputs.value)) }}-${{ (format('{0}/**/*.h', steps.working-dir.outputs.value) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles(format('{0}/**/*.c', steps.working-dir.outputs.value)) }}-${{ (format('{0}/**/*.h', steps.working-dir.outputs.value)) }}
       - name: Download C Client Deps
         run: |
           brew install automake
@@ -68,7 +68,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ (format('{0}module/c-client/**/*', steps.working-dir.outputs.value) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ (format('{0}module/c-client/**/*', steps.working-dir.outputs.value)) }}
       - name: Cache Jansson
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
@@ -77,7 +77,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ (format('{0}module/jansson/**/*', steps.working-dir.outputs.value) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ (format('{0}module/jansson/**/*', steps.working-dir.outputs.value)) }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
