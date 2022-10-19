@@ -68,7 +68,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}module/c-client/**/*.c', steps.working-dir.outputs.value)) }}-${{ hashFiles(format('{0}module/c-client/**/*.h', steps.working-dir.outputs.value)) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}modules/c-client/**/*', steps.working-dir.outputs.value)) }}
       - name: Cache Jansson
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
@@ -77,7 +77,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}module/jansson/**/*.c', steps.working-dir.outputs.value)) }}-${{ hashFiles(format('{0}module/jansson/**/*.h', steps.working-dir.outputs.value)) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}modules/jansson/**/*', steps.working-dir.outputs.value)) }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
