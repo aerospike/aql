@@ -52,7 +52,7 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
-          cache-index: "4" # To clear the cache if needed.
+          cache-index: "5" # To clear the cache if needed.
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/target
@@ -68,7 +68,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client/**/*') }}
       - name: Cache Jansson
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
@@ -77,7 +77,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson/**/*') }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
