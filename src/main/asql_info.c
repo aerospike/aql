@@ -106,24 +106,14 @@ int
 asql_info(asql_config* c, aconfig* ac)
 {
 	info_config* ic = (info_config*)ac;
-	char* depr_warn = NULL;
-	int result;
+	int result = -1;
 
 	if ((!ic) || (!ic->cmd)) {
-		return -1;
+		return result;
 	}
 
 	if (strstr(ic->cmd, "namespaces") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-	}
-	else if (strstr(ic->cmd, "namespace") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
 	}
 	else if (strstr(ic->cmd, "sets") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
@@ -143,77 +133,14 @@ asql_info(asql_config* c, aconfig* ac)
 	else if (strstr(ic->cmd, "udf-get") == ic->cmd) {
 		result = info_generic(c, ic, NULL, udf_get_res_parser, NULL);
 	}
-	else if (strstr(ic->cmd, "sindex-create") == ic->cmd) {
-		result = info_generic(c, ic, "1 index added.", NULL, NULL);
-		depr_warn = strdup("Warning: The CREATE INDEX command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "sindex-repair") == ic->cmd) {
-		result = info_generic(c, ic, "1 index repaired.", NULL, NULL);
-	}
-	else if (strstr(ic->cmd, "sindex-delete") == ic->cmd) {
-		result = info_generic(c, ic, "1 index removed.", NULL, NULL);
-		depr_warn = strdup("Warning: The DROP INDEX command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "sindex-describe") == ic->cmd) {
-		result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
 	else if (strstr(ic->cmd, "sindex-list") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
 	}
-	else if (strstr(ic->cmd, "sindex") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "jobs:module=scan") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-		depr_warn = strdup("Warning: The SHOW SCANS command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "jobs:module=query") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-		depr_warn = strdup("Warning: The SHOW QUERIES command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "statistics") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
 	else {
-		if (ic->optype == ASQL_OP_ASINFO) {
-			if (g_renderer == &table_renderer) {
-				result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-			}
-			else {
-				result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-			}
-
-			depr_warn = strdup("Warning: The ASINFO command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-		}
-		else {
-			result = info_generic(c, ic, NULL, NULL, NULL);
-
-			if (ic->optype == ASQL_OP_KILL_S) {
-				depr_warn = strdup("Warning: The KILL_SCAN command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-			}
-			else if (ic->optype == ASQL_OP_KILL_Q) {
-				depr_warn = strdup("Warning: The KILL_QUERY command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-			}
-		}
-	}
-
-	if (depr_warn != NULL) {
-		fprintf(stderr, "%s", depr_warn);
-		free(depr_warn);
+		// An error that should only appear during development.
+		char err_msg[1024];
+		snprintf(err_msg, 1023, "Unrecognized info command %s", ic->cmd);
+		g_renderer->render_error(errno, err_msg, NULL);
 	}
 
 	return result;
