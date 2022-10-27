@@ -49,7 +49,6 @@ typedef struct asql_cmd_file_desc {
 
 typedef struct {
 	char* cmd;
-	asql_optype optype;
 	parse_fn fn;
 } parse_entry;
 
@@ -88,26 +87,26 @@ const op_fn op_map[OP_MAX] = {
 };
 
 const parse_entry parse_table[ASQL_OP_MAX] = {
-	{ "EXPLAIN", ASQL_OP_EXPLAIN, aql_parse_explain },
-	{ "INSERT", ASQL_OP_INSERT, aql_parse_insert },
-	{ "DELETE", ASQL_OP_DELETE, aql_parse_delete },
-	{ "TRUNCATE", ASQL_OP_TRUNCATE, aql_parse_truncate },
-	{ "EXECUTE", ASQL_OP_EXECUTE, aql_parse_execute },
+	{ "EXPLAIN", aql_parse_explain },
+	{ "INSERT", aql_parse_insert },
+	{ "DELETE", aql_parse_delete },
+	{ "TRUNCATE", aql_parse_truncate },
+	{ "EXECUTE", aql_parse_execute },
 
-	{ "SELECT", ASQL_OP_SELECT, aql_parse_select },
-	{ "AGGREGATE", ASQL_OP_AGGREGATE, aql_parse_aggregate },
+	{ "SELECT", aql_parse_select },
+	{ "AGGREGATE", aql_parse_aggregate },
 
-	{ "REGISTER", ASQL_OP_REGISTER, aql_parse_registerudf },
-	{ "REMOVE", ASQL_OP_REMOVE, aql_parse_removeudf },
+	{ "REGISTER", aql_parse_registerudf },
+	{ "REMOVE", aql_parse_removeudf },
 
-	{ "SHOW", ASQL_OP_SHOW, aql_parse_show },
-	{ "DESC", ASQL_OP_DESC, aql_parse_desc },
+	{ "SHOW", aql_parse_show },
+	{ "DESC", aql_parse_desc },
 
-	{ "RUN", ASQL_OP_RUN, aql_parse_run },
+	{ "RUN", aql_parse_run },
 
-	{ "SET", ASQL_OP_SET, aql_parserun_set },
-	{ "GET", ASQL_OP_GET, aql_parserun_get },
-	{ "RESET", ASQL_OP_RESET, aql_parserun_reset },
+	{ "SET", aql_parserun_set },
+	{ "GET", aql_parserun_get },
+	{ "RESET", aql_parserun_reset },
 };
 
 const destroy_fn destroy_table[OP_MAX] = {
@@ -330,9 +329,6 @@ parse(char* cmd)
 	for (i = 0; i < ASQL_OP_MAX; i++) {
 		if (!strcasecmp(ftok, parse_table[i].cmd)) {
 			ac = parse_table[i].fn(&tknzr);
-			if (ac) {
-				ac->optype = parse_table[i].optype;
-			}
 			break;
 		}
 	}

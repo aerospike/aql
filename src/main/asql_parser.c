@@ -78,12 +78,6 @@ static aconfig* parse_show_info(tokenizer* tknzr);
 // Inlines and Macros.
 //
 
-static inline bool
-verify_address(const char* address)
-{
-	return strlen(address) < 128;
-}
-
 #define IF_CURR_TOKEN_NULL_GOTO(x)    \
     if (!tknzr->tok) goto x;
 
@@ -174,6 +168,7 @@ aql_parse_insert(tokenizer* tknzr)
 
 	pk_config* p = malloc(sizeof(pk_config));
 	bzero(p, sizeof(pk_config));
+	p->optype = ASQL_OP_INSERT;
 	p->type = PRIMARY_INDEX_OP;
 	p->op = WRITE_OP;
 	p->ns = ns;
@@ -246,6 +241,7 @@ aql_parse_delete(tokenizer* tknzr)
 
 	pk_config* p = malloc(sizeof(pk_config));
 	bzero(p, sizeof(pk_config));
+	p->optype = ASQL_OP_DELETE;
 	p->type = PRIMARY_INDEX_OP;
 	p->op = DELETE_OP;
 	p->ns = ns;
@@ -384,7 +380,7 @@ aql_parse_desc(tokenizer* tknzr)
 	sprintf(infocmd, "udf-get:filename=%s\n", filename);
 	free(filename);
 
-	info_config* i = asql_info_config_create(strdup(infocmd), NULL, false);
+	info_config *i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
 	return (aconfig*)i;
 }
 
@@ -397,7 +393,7 @@ aql_parse_registerudf(tokenizer* tknzr)
 		return NULL;
 	}
 
-	info_config* i = asql_info_config_create(strdup("udf-put"), pathname,
+	info_config* i = asql_info_config_create(ASQL_OP_REGISTER, strdup("udf-put"), pathname,
 			true);
 	return (aconfig*)i;
 }
@@ -412,7 +408,7 @@ aql_parse_removeudf(tokenizer* tknzr)
 		return NULL;
 	}
 
-	info_config* i = asql_info_config_create(strdup("udf-remove"),
+	info_config* i = asql_info_config_create(ASQL_OP_REMOVE, strdup("udf-remove"),
 			filename, true);
 	return (aconfig*)i;
 }
@@ -428,6 +424,7 @@ aql_parse_run(tokenizer* tknzr)
 	}
 
 	runfile_config* r = malloc(sizeof(runfile_config));
+	r->optype = ASQL_OP_RUN;
 	r->type = RUNFILE_OP;
 	r->fname = fname;
 	return (aconfig*)r;
@@ -1057,26 +1054,6 @@ parse_module_filename(tokenizer* tknzr)
 	return parse_module(tknzr, true);
 }
 
-static int
-parse_address(tokenizer* tknzr, const char* stop, as_string_builder* sb)
-{
-	as_string_builder_reset(sb);
-
-	while (1) {
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (tknzr->tok[0] == ',') {
-			return 2;
-		}
-
-		as_string_builder_append(sb, tknzr->tok);
-	}
-}
-
 // Parse expressions of the form:  CAST(<ValueString> AS <TypeName>)
 static int
 parse_cast_expression(tokenizer* tknzr, asql_value* value)
@@ -1249,6 +1226,7 @@ parse_query(tokenizer* tknzr, int type)
 	if (!tknzr->tok) {
 		scan_config* s = malloc(sizeof(scan_config));
 		bzero(s, sizeof(scan_config));
+		s->optype = type;
 		s->type = SCAN_OP;
 		s->ns = ns;
 		s->set = set;
@@ -1287,6 +1265,7 @@ parse_query(tokenizer* tknzr, int type)
 		// Parse primary key value.
 		pk_config* p = malloc(sizeof(pk_config));
 		bzero(p, sizeof(pk_config));
+		p->optype = type;
 		p->type = PRIMARY_INDEX_OP;
 		p->op = READ_OP;
 		p->ns = ns;
@@ -1311,6 +1290,7 @@ parse_query(tokenizer* tknzr, int type)
 
 	sk_config* s = malloc(sizeof(sk_config));
 	bzero(s, sizeof(sk_config));
+	s->optype = type;
 	s->type = SECONDARY_INDEX_OP;
 	s->ns = ns;
 	s->set = set;
@@ -1359,22 +1339,23 @@ parse_show_info(tokenizer* tknzr)
 	info_config* i = NULL;
 
 	if (!strcasecmp(tknzr->tok, "NAMESPACES")) {
-		i = asql_info_config_create(strdup("namespaces"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("namespaces"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "SETS")) {
-		i = asql_info_config_create(strdup("sets"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("sets"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "BINS")) {
-		i = asql_info_config_create(strdup("bins"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("bins"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "PACKAGES")
 	        || !strcasecmp(tknzr->tok, "MODULES")) {
-		i = asql_info_config_create(strdup("udf-list"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("udf-list"), NULL, false);
 	}
-	else if (!strcasecmp(tknzr->tok, "INDEXES")) {
+	else if (!strcasecmp(tknzr->tok, "INDEXES"))
+	{
 		get_next_token(tknzr);
 		if (!tknzr->tok) {
-			i = asql_info_config_create(strdup("sindex-list:"), NULL, false);
+			i = asql_info_config_create(ASQL_OP_SHOW, strdup("sindex-list:"), NULL, false);
 		}
 		else {
 			asql_name ns = NULL;
@@ -1390,7 +1371,7 @@ parse_show_info(tokenizer* tknzr)
 			else
 				sprintf(infocmd, "sindex-list:ns=%s;\n", ns);
 
-			i = asql_info_config_create(strdup(infocmd), NULL, false);
+			i = asql_info_config_create(ASQL_OP_SHOW, strdup(infocmd), NULL, false);
 
 			if (ns) free(ns);
 			if (set) free(set);
