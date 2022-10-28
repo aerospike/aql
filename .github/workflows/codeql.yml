@@ -94,7 +94,7 @@ jobs:
         key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
     - name: Download C Client Deps
       run: |
-        apt-get install libc6-dev libssl-dev autoconf automake libtool g++ zlib1g-dev ncurses-dev liblua5.1-dev
+        sudo apt-get install libc6-dev libssl-dev autoconf automake libtool g++ zlib1g-dev ncurses-dev liblua5.1-dev
     - name: Cache C Client
       uses: actions/cache@v3
       if: steps.cache-aql.outputs.cache-hit != 'true'
