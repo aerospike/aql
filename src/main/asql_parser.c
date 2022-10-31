@@ -1941,10 +1941,16 @@ parse_query(tokenizer* tknzr, int type)
 		return NULL;
 	}
 
-	return (aconfig*)s;
+	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
 ERROR:
-	predicting_parse_error(tknzr);
+	if (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or")) {
+		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->tok);
+		fprintf(stderr, "Only a single predicate is supported.\n");
+	} else {
+		predicting_parse_error(tknzr);
+	}
+
 	if (ns) free(ns);
 	if (set) free(set);
 	if (udfpkg) free(udfpkg);
