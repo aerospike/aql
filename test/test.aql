@@ -1,4 +1,4 @@
-//INSERT INTO test.demo(PK, "bin\"one") values (1,1)
+# INSERT INTO test.demo(PK, "bin\"one") values (1,1)
 
 
 INSERT INTO test.demo (PK, binint, bindouble, binstring, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
@@ -10,35 +10,15 @@ DELETE from test.testset where EDIGEST='E5/omCK2PfwXOupRzPLvCRqzEp8='
 
 INSERT INTO test.demo (PK, binint, bindouble, binstring, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
 
-truncate test
-truncate test demo
-
-INSERT INTO test.demo (PK, binint, bindouble, binstring, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
-
-
 REGISTER PACKAGE './test/lua/test1.lua'
 SHOW PACKAGES
 DESC PACKAGE test1.lua
 REMOVE PACKAGE test1.lua
 REGISTER PACKAGE 'example/lua/test1.lua'
-SYSTEM sleep 1
 EXECUTE test1.foo() on test.demo where PK="all_keys"
 EXECUTE test1.foo("a",1) on test.demo where PK="all_keys"
 EXECUTE test1.foo("a",1) on test.demo
 EXECUTE test1.foo("a",1) on test.demo where binint = 1
-
-
-CREATE INDEX indint ON test.demo (binint) NUMERIC
-//CREATE INDEX inddouble ON test.demo (bindouble) DOUBLE
-CREATE INDEX indstring ON test.demo (binstring) STRING
-CREATE INDEX indgeo ON test.demo (bingeo) GEO2DSPHERE
-CREATE INDEX indgeo1 ON test.demo (bincastgeo) GEO2DSPHERE
-CREATE MAPKEYS INDEX indmap ON test.demo (binmap) STRING
-CREATE MAPVALUES INDEX indmap1 ON test.demo (bincastmap) NUMERIC
-CREATE LIST index indlist on test.demo (binlist) NUMERIC
-CREATE INDEX indblob ON test.demo (binblob) STRING
-CREATE INDEX "~!@!#!@ind" ON test.demo ("~!@#_bin_$%^&*") STRING
-
 
 SELECT * FROM test.demo
 SELECT * FROM test.demo WHERE PK = 'all_key'
@@ -61,8 +41,9 @@ EXPLAIN SELECT * FROM test.demo where EDIGEST='t/S4OIni2mfeaD4d9pGaHqzERsg='
 
 EXPLAIN SELECT binjsonmap, binint FROM test.demo IN MAPKEYS WHERE binmap = "a"
 
-CREATE INDEX numindex ON test.newtest (b) NUMERIC
-CREATE INDEX strindex ON test.newtest (c) STRING
+# CREATE INDEX numindex ON test.newtest (b) NUMERIC
+# CREATE INDEX strindex ON test.newtest (c) STRING
+
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec1',5,3,'bac')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec2',3,3,'kkc')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec3',5,8,'bcj')
@@ -74,34 +55,21 @@ INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec8',2,9,'adc')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec9',5,3,'lnm')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec10',2,3,'mnm')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec11',4,3,'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-REGISTER MODULE './test/lua/test2.lua'
 AGGREGATE test2.sum_even_a() ON test.newtest WHERE b = 3
 AGGREGATE test2.sum_even_a("a", 1) ON test.newtest WHERE b = 3
 
-DROP INDEX test numindex
-DROP INDEX test strindex
+# DROP INDEX test numindex
+# DROP INDEX test strindex
 
 
-// ENTERPRISE
+# ENTERPRISE
 SET DURABLE_DELETE true
-SHOW USERS
-SHOW ROLES
 
 SET TIMEOUT 100
 
-SHOW NAMESPACES; STAT NAMESPACE test
-
-SHOW SCANS
-SHOW QUERIES
+SHOW NAMESPACES
 SHOW SETS
 SHOW BINS
-
-SHOW INDEXES; SHOW INDEXES test demo
-
+SHOW INDEXES
 SHOW MODULES; SHOW PACKAGES
-
-STAT INDEX TEST IND1
-STAT SYSTEM
-ASINFO 'STATISTICS'
-ASINFO 'NAMESPACE/TEST'
 SHOW MODULES

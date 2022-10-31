@@ -2,16 +2,13 @@
 SET ECHO true
 
 # Set record time to live to 100 seconds so the records are automatically purged.
-SET RECORD_TTL 100
-PRINT >>> Set record time to live to 100 seconds.
+# SET RECORD_TTL 100
+# Set record time to live to 100 seconds.
 
 # Define secondary indexes on the data that we will insert
 # Indexes need time to be built. Best to do before inserting data.
 
-CREATE INDEX numindex ON test.newtest (b) NUMERIC
-CREATE INDEX strindex ON test.newtest (c) STRING
-
-PRINT >>> Add 11 records to the database.
+# Add 11 records to the database.
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec1',5,3,'bac')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec2',3,3,'kkc')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec3',5,8,'bcj')
@@ -25,13 +22,13 @@ INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec10',2,3,'mnm')
 INSERT INTO test.newtest (PK,a,b,c) VALUES ('rec11',0,0,'xxx')
 
 SELECT * FROM test.newtest 
-PRINT >>> Should return 11 records.
+# Should return 11 records.
 
 DELETE FROM test.newtest WHERE PK = 'rec11'
 
 SELECT * FROM test.newtest 
 
-PRINT >>> Deleted one record, should now return only 10 records.
+# Deleted one record, should now return only 10 records.
 
 # Test other options of the SELECT command
 SELECT * FROM test.newtest WHERE b = 3 
@@ -39,36 +36,26 @@ SELECT * FROM test.newtest WHERE c = 'adc'
 SELECT * FROM test.newtest WHERE b BETWEEN 0 AND 4 
 SELECT * FROM test.newtest WHERE PK = 'rec10' 
 SELECT * FROM test.newtest WHERE PK = 'rec11' 
-PRINT >>> We deleted rec11, so this should FAIL.
-PRINT +++++++++++++++++++++++++++++++++++++++++++
-PRINT >>> Test USER DEFINED FUNCTIONS
-PRINT  
-REGISTER PACKAGE './lua/test1.lua'
-SYSCMD sleep 1
-EXECUTE test1.foo() ON test.newtest WHERE PK='rec1'
-PRINT 
-PRINT >>> Must return numeric 5
-EXECUTE test1.foo() ON test.newtest
-PRINT >>> This will launch a scan job and return
 
-PRINT >>> Test Admin Calls
-PRINT  
+# We deleted rec11, so this should FAIL.
+# Test USER DEFINED FUNCTIONS 
+REGISTER PACKAGE './lua/test1.lua'
+# SYSCMD sleep 1
+EXECUTE test1.foo() ON test.newtest WHERE PK='rec1'
+
+# Must return numeric 5
+EXECUTE test1.foo() ON test.newtest
+# This will launch a scan job and return
+
+# Test Admin Calls
 SHOW NAMESPACES
 SHOW SETS
 SHOW BINS
-SHOW QUERIES
 SHOW PACKAGES
 
 SHOW INDEXES 
-SHOW INDEXES test
-SHOW INDEXES test.newtest
 
-DESC INDEX test strindex
 DESC PACKAGE test1.lua
-REMOVE PACKAGE test1.lua
-STAT SYSTEM
-STAT QUERY
-STAT INDEX test numindex
-PRINT  
+REMOVE PACKAGE test1.lua 
 SHOW PACKAGES
 SET ECHO false
