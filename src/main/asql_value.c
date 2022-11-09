@@ -351,7 +351,7 @@ asql_parse_value_as(char* s, asql_value* value, asql_value_type_t vtype)
 			}
 			else
 			{
-				fprintf(stdout, "Error!  Cannot cast \"%s\" to float!\n", s);
+				fprintf(stdout, "Error!  Cannot cast \"%s\" to bool!\n", s);
 				return -2;
 			}
 			break;
