@@ -1,15 +1,3 @@
-# create index - invalid namespace
-CREATE INDEX ind ON abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo (bin0) NUMERIC
-
-# create index - invalid set name
-CREATE INDEX ind1 ON test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz (bin1) NUMERIC
-
-# create index - invalid index name
-CREATE INDEX abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz ON test_I.demo (bin3) NUMERIC
-
-# create index - invalid index name
-CREATE INDEX idx_test_1 ON test.demo (segfihsedgifhselghselFGHSElfkhjasflkhasflkhFSLAShflakshFLAkshfasf) NUMERIC
-
 # create record - invalid namespace
 INSERT INTO abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.demo (PK, bin0, bin1) values ('0', 1, 2)
 
@@ -33,9 +21,3 @@ SELECT * FROM test.abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeff
 
 # select record - invalid bin name
 SELECT abcdeffghijklmnopqrstuvwxyz FROM test.demo
-
-# drop index - invalid namespace
-DROP INDEX abcdeffghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz ind0
-
-# drop index - invalid bin name
-DROP INDEX test_I abcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyzabcdeffghijklmnopqrstuvwxyz

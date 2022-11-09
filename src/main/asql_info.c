@@ -79,11 +79,9 @@ static bool pair_parser(as_hashmap* map, const char* req, const char* pair);
 static bool generic_cb(const as_error* err, const as_node* node, const char* req, char* res, void* udata);
 static bool parse_response(info_obj* iobj, const as_error* err, const as_node* node, const char* req, const char* res);
 static bool bins_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool kv_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
 static bool udf_get_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
 static bool list_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
 static bool list_udf_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool dict_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
 
 
 //==========================================================
@@ -91,10 +89,10 @@ static bool dict_res_parser(info_obj* parser, const as_error* err, const as_node
 //
 
 info_config*
-asql_info_config_create(char* cmd, char* backout_cmd, bool is_ddl)
+asql_info_config_create(int optype, char* cmd, char* backout_cmd, bool is_ddl)
 {
 	info_config* i = malloc(sizeof(info_config));
-	i->optype = ASQL_OP_ASINFO;
+	i->optype = optype; // must be set by caller
 	i->type = INFO_OP;
 	i->is_ddl = is_ddl;
 	i->cmd = cmd;
@@ -106,24 +104,14 @@ int
 asql_info(asql_config* c, aconfig* ac)
 {
 	info_config* ic = (info_config*)ac;
-	char* depr_warn = NULL;
-	int result;
+	int result = -1;
 
 	if ((!ic) || (!ic->cmd)) {
-		return -1;
+		return result;
 	}
 
 	if (strstr(ic->cmd, "namespaces") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-	}
-	else if (strstr(ic->cmd, "namespace") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
 	}
 	else if (strstr(ic->cmd, "sets") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
@@ -143,77 +131,14 @@ asql_info(asql_config* c, aconfig* ac)
 	else if (strstr(ic->cmd, "udf-get") == ic->cmd) {
 		result = info_generic(c, ic, NULL, udf_get_res_parser, NULL);
 	}
-	else if (strstr(ic->cmd, "sindex-create") == ic->cmd) {
-		result = info_generic(c, ic, "1 index added.", NULL, NULL);
-		depr_warn = strdup("Warning: The CREATE INDEX command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "sindex-repair") == ic->cmd) {
-		result = info_generic(c, ic, "1 index repaired.", NULL, NULL);
-	}
-	else if (strstr(ic->cmd, "sindex-delete") == ic->cmd) {
-		result = info_generic(c, ic, "1 index removed.", NULL, NULL);
-		depr_warn = strdup("Warning: The DROP INDEX command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "sindex-describe") == ic->cmd) {
-		result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
 	else if (strstr(ic->cmd, "sindex-list") == ic->cmd) {
 		result = info_generic(c, ic, NULL, list_res_parser, NULL);
 	}
-	else if (strstr(ic->cmd, "sindex") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "jobs:module=scan") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-		depr_warn = strdup("Warning: The SHOW SCANS command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "jobs:module=query") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
-		depr_warn = strdup("Warning: The SHOW QUERIES command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
-	else if (strstr(ic->cmd, "statistics") == ic->cmd) {
-		if (g_renderer == &table_renderer) {
-			result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-		}
-		else {
-			result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-		}
-
-		depr_warn = strdup("Warning: The STAT commands have been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-	}
 	else {
-		if (ic->optype == ASQL_OP_ASINFO) {
-			if (g_renderer == &table_renderer) {
-				result = info_generic(c, ic, NULL, dict_res_parser, NULL);
-			}
-			else {
-				result = info_generic(c, ic, NULL, kv_res_parser, NULL);
-			}
-
-			depr_warn = strdup("Warning: The ASINFO command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-		}
-		else {
-			result = info_generic(c, ic, NULL, NULL, NULL);
-
-			if (ic->optype == ASQL_OP_KILL_S) {
-				depr_warn = strdup("Warning: The KILL_SCAN command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-			}
-			else if (ic->optype == ASQL_OP_KILL_Q) {
-				depr_warn = strdup("Warning: The KILL_QUERY command has been deprecated and will be removed in the next release of aql. Use asadm instead.\n");
-			}
-		}
-	}
-
-	if (depr_warn != NULL) {
-		fprintf(stderr, "%s", depr_warn);
-		free(depr_warn);
+		// An error that should only appear during development.
+		char err_msg[1024];
+		snprintf(err_msg, 1023, "Unrecognized info command %s", ic->cmd);
+		g_renderer->render_error(errno, err_msg, NULL);
 	}
 
 	return result;
@@ -651,31 +576,6 @@ udf_get_res_parser(info_obj* parser, const as_error* err, const as_node* node,
 }
 
 static bool
-kv_res_parser(info_obj* parser, const as_error* err, const as_node* node,
-          const char* req, const char* res)
-{
-	as_hashmap map;
-	as_hashmap_init(&map, 128);
-
-	char* pair_save = NULL;
-	char* pair = strtok_r((char*)res, ";\n\t", &pair_save);
-
-	while (pair) {
-		pair_parser(&map, req, pair);
-		pair = strtok_r(NULL, ";\n\t", &pair_save);
-	}
-
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-	g_renderer->render((as_val*)&map, rview);
-	g_renderer->render((as_val*) NULL, rview);
-
-	as_hashmap_destroy(&map);
-
-	return true;
-}
-
-static bool
 list_udf_parser(info_obj* parser, const as_error* err,
             const as_node* node, const char* req, const char* res)
 {
@@ -757,54 +657,6 @@ list_res_parser(info_obj* parser, const as_error* err,
 	}
 
 	as_hashmap_destroy(&map);
-
-	g_renderer->render((as_val*) NULL, rview);
-
-	return true;
-}
-
-static bool
-dict_res_parser(info_obj* parser, const as_error* err,
-            const as_node* node, const char* req, const char* res)
-{
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-
-	// as_string* key_name = as_string_new("name", false);
-	as_hashmap m,* map;
-	map = as_hashmap_init(&m, 32);
-
-	as_string col_name;
-	as_string_init(&col_name, "name", false);
-
-	as_string col_value;
-	as_string_init(&col_value, "value", false);
-
-	char* pair_save = NULL;
-	char* pair = strtok_r((char*)res, ";\n", &pair_save);
-	while (pair) {
-
-		char* name = strdup(pair);
-		char* delim = strstr(name, "=");
-		char* value = NULL;
-
-		if (delim) {
-			delim[0] = '\0';
-			value = delim + 1;
-		}
-
-		as_hashmap_set(map, (as_val*)as_val_reserve(&col_name),
-		               (as_val*)as_string_new(name, true));
-
-		value_parser(map, req, (as_val*)as_val_reserve(&col_value), value);
-
-		g_renderer->render((as_val*)map, rview);
-
-		as_hashmap_clear(map);
-		pair = strtok_r(NULL, ";\n", &pair_save);
-	}
-
-	as_hashmap_destroy(map);
 
 	g_renderer->render((as_val*) NULL, rview);
 

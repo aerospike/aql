@@ -36,22 +36,16 @@ aconfig* aql_parse_execute(tokenizer* tknzr);
 aconfig* aql_parse_select(tokenizer* tknzr);
 aconfig* aql_parse_aggregate(tokenizer* tknzr);
 
-aconfig* aql_parse_create(tokenizer* tknzr);
-aconfig* aql_parse_drop(tokenizer* tknzr);
-aconfig* aql_parse_grant(tokenizer* tknzr);
-aconfig* aql_parse_revoke(tokenizer* tknzr);
 aconfig* aql_parse_registerudf(tokenizer* tknzr);
 aconfig* aql_parse_removeudf(tokenizer* tknzr);
 
 aconfig* aql_parse_show(tokenizer* tknzr);
 aconfig* aql_parse_desc(tokenizer* tknzr);
-aconfig* aql_parse_stat(tokenizer* tknzr);
 
 aconfig* aql_parse_killquery(tokenizer* tknzr);
 aconfig* aql_parse_killscan(tokenizer* tknzr);
 
 aconfig* aql_parse_run(tokenizer* tknzr);
-aconfig* aql_parse_asinfo(tokenizer* tknzr);
 
 aconfig* aql_parserun_set(tokenizer* tknzr);
 aconfig* aql_parserun_get(tokenizer* tknzr);
