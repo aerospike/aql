@@ -1,14 +1,14 @@
 # INSERT INTO test.demo(PK, "bin\"one") values (1,1)
 
 
-INSERT INTO test.demo (PK, binint, bindouble, binstring, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
+INSERT INTO test.demo (PK, binint, bindouble, binstring, binbool, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", true, GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
 
 DELETE FROM test.demo WHERE PK = 'key1'
 DELETE FROM test.demo WHERE PK = 'all_keys'
 DELETE FROM test.testset where DIGEST='139FE89822B63DFC173AEA51CCF2EF091AB3129F'
 DELETE from test.testset where EDIGEST='E5/omCK2PfwXOupRzPLvCRqzEp8='
 
-INSERT INTO test.demo (PK, binint, bindouble, binstring, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
+INSERT INTO test.demo (PK, binint, bindouble, binstring, binbool, bingeo, bincastgeo, binmap, binjsonmap, bincastmap, binlist, binjsonlist, bincastlist, bindoc, binblob, binNull, "~!@#_bin_$%^&*", binempty, "s p a c e") values ('all_key', 1, 1.2, "string", true, GEOJSON('{"type": "Point", "coordinates": [123.4, -456.7]}'), CAST('{"type": "Point", "coordinates": [123.4, -456.7]}' AS GEOJSON), MAP('{"a": 1, "b": 2}'), JSON('{"a": 1, "b": 2}'), CAST('{"a": 1, "b": 2}' AS MAP), LIST('[1,2,3]'), JSON('[1,2,3]'), CAST('[1,2,3]' AS LIST), JSON('{"a":[1,2,3,{"a":"b"},{"a":[1,2]}]}'), CAST('asfafasfasfasfasfasfasfasfasfasfasfasfasfsfafasfasfasfasdf' AS TEXT), NULL, "__.\asd%!@#$%#$%^^", "", "     ")
 
 REGISTER PACKAGE './test/lua/test1.lua'
 SHOW PACKAGES
