@@ -40,4 +40,4 @@ typedef struct info_config {
 //
 
 int asql_info(asql_config* c, aconfig* ac);
-info_config* asql_info_config_create(char* cmd, char* backout_cmd, bool is_ddl);
+info_config* asql_info_config_create(int optype, char* cmd, char* backout_cmd, bool is_ddl);

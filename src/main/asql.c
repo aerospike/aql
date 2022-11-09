@@ -25,7 +25,6 @@
 #include <aerospike/as_log_macros.h>
 
 #include <asql.h>
-#include <asql_admin.h>
 #include <asql_info.h>
 #include <asql_key.h>
 #include <asql_parser.h>
@@ -50,7 +49,6 @@ typedef struct asql_cmd_file_desc {
 
 typedef struct {
 	char* cmd;
-	asql_optype optype;
 	parse_fn fn;
 } parse_entry;
 
@@ -72,7 +70,6 @@ static void destroy_skconfig(aconfig* ac);
 static void destroy_infoconfig(aconfig* ac);
 static void destroy_scanconfig(aconfig* ac);
 static void destroy_runfileconfig(aconfig* ac);
-static void destroy_admconfig(aconfig* ac);
 static void destroy_truncateconfig(aconfig* ac);
 
 
@@ -86,42 +83,30 @@ const op_fn op_map[OP_MAX] = {
 	asql_info,
 	asql_scan,
 	runfile,
-	aql_admin,
 	asql_truncate,
 };
 
 const parse_entry parse_table[ASQL_OP_MAX] = {
-	{ "EXPLAIN", ASQL_OP_EXPLAIN, aql_parse_explain },
-	{ "INSERT", ASQL_OP_INSERT, aql_parse_insert },
-	{ "DELETE", ASQL_OP_DELETE, aql_parse_delete },
-	{ "TRUNCATE", ASQL_OP_TRUNCATE, aql_parse_truncate },
-	{ "EXECUTE", ASQL_OP_EXECUTE, aql_parse_execute },
+	{ "EXPLAIN", aql_parse_explain },
+	{ "INSERT", aql_parse_insert },
+	{ "DELETE", aql_parse_delete },
+	{ "TRUNCATE", aql_parse_truncate },
+	{ "EXECUTE", aql_parse_execute },
 
-	{ "SELECT", ASQL_OP_SELECT, aql_parse_select },
-	{ "AGGREGATE", ASQL_OP_AGGREGATE, aql_parse_aggregate },
+	{ "SELECT", aql_parse_select },
+	{ "AGGREGATE", aql_parse_aggregate },
 
-	{ "CREATE", ASQL_OP_CREATE, aql_parse_create },
-	{ "DROP", ASQL_OP_DROP, aql_parse_drop },
-	{ "GRANT", ASQL_OP_GRANT, aql_parse_grant },
-	{ "REVOKE", ASQL_OP_REMOVE, aql_parse_revoke },
-	{ "REGISTER", ASQL_OP_REGISTER, aql_parse_registerudf },
-	{ "REMOVE", ASQL_OP_REMOVE, aql_parse_removeudf },
+	{ "REGISTER", aql_parse_registerudf },
+	{ "REMOVE", aql_parse_removeudf },
 
-	{ "SHOW", ASQL_OP_SHOW, aql_parse_show },
-	{ "DESC", ASQL_OP_DESC, aql_parse_desc },
-	{ "STAT", ASQL_OP_STAT, aql_parse_stat },
+	{ "SHOW", aql_parse_show },
+	{ "DESC", aql_parse_desc },
 
-	{ "KILL_QUERY", ASQL_OP_KILL_Q, aql_parse_killquery },
-	{ "KILL_SCAN", ASQL_OP_KILL_S, aql_parse_killscan },
+	{ "RUN", aql_parse_run },
 
-	{ "RUN", ASQL_OP_RUN, aql_parse_run },
-	{ "ASINFO", ASQL_OP_ASINFO, aql_parse_asinfo },
-
-	{ "SET", ASQL_OP_SET, aql_parserun_set },
-	{ "GET", ASQL_OP_GET, aql_parserun_get },
-	{ "RESET", ASQL_OP_RESET, aql_parserun_reset },
-	{ "PRINT", ASQL_OP_PRINT, aql_parserun_print },
-	{ "SYSTEM", ASQL_OP_SYSTEM, aql_parserun_system }
+	{ "SET", aql_parserun_set },
+	{ "GET", aql_parserun_get },
+	{ "RESET", aql_parserun_reset },
 };
 
 const destroy_fn destroy_table[OP_MAX] = {
@@ -130,7 +115,6 @@ const destroy_fn destroy_table[OP_MAX] = {
 	destroy_infoconfig,
 	destroy_scanconfig,
 	destroy_runfileconfig,
-	destroy_admconfig,
 	destroy_truncateconfig,
 };
 
@@ -345,9 +329,6 @@ parse(char* cmd)
 	for (i = 0; i < ASQL_OP_MAX; i++) {
 		if (!strcasecmp(ftok, parse_table[i].cmd)) {
 			ac = parse_table[i].fn(&tknzr);
-			if (ac) {
-				ac->optype = parse_table[i].optype;
-			}
 			break;
 		}
 	}
@@ -481,32 +462,4 @@ destroy_runfileconfig(aconfig* ac)
 	runfile_config* r = (runfile_config*)ac;
 	if (r->fname) free(r->fname);
 	free(r);
-}
-
-static void
-destroy_admconfig(aconfig* ac)
-{
-	admin_config* cfg = (admin_config*)ac;
-	free(cfg->user);
-	free(cfg->password);
-	free(cfg->role);
-
-	if (cfg->whitelist) {
-		as_vector* list = cfg->whitelist;
-		for (uint32_t i = 0; i < list->size; i++) {
-			void* data = as_vector_get_ptr(list, i);
-			free(data);
-		}
-		as_vector_destroy(list);
-	}
-
-	if (cfg->list) {
-		as_vector* list = cfg->list;
-		for (uint32_t i = 0; i < list->size; i++) {
-			void* data = as_vector_get_ptr(list, i);
-			free(data);
-		}
-		as_vector_destroy(list);
-	}
-	free(cfg);
 }
