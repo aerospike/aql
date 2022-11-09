@@ -421,6 +421,11 @@ key_write(asql_config* c, pk_config* p)
 				as_record_set_geojson_strp(&rec, name, str, false);
 				break;
 			}
+			case AS_BOOLEAN:{
+				bool bol = value->u.bol;
+				as_record_set_bool(&rec, name, bol);
+				break;
+			}
 			default: {
 				as_error_update(&err, AEROSPIKE_ERR_CLIENT,
 				                "Unknown value type: %s %d", name, value->type);

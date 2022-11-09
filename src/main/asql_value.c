@@ -61,6 +61,10 @@ static asql_type_t asql_types[] = {
 	{ "TEXT", ASQL_VALUE_TYPE_STRING },
 	{ "VARCHAR", ASQL_VALUE_TYPE_STRING },
 
+	// Bool type:
+	{ "BOOL", ASQL_VALUE_TYPE_BOOL },
+
+
 	// End of the type name
 	{ NULL, ASQL_VALUE_TYPE_NONE }
 };
@@ -128,6 +132,19 @@ asql_set_args(as_error* err, as_vector* udfargs, as_arraylist* arglist)
 					as_arraylist_append(arglist,
 										(as_val*)as_string_new_strdup(str));
 				}
+				break;
+			}
+			case AS_BOOLEAN:
+			{
+				as_val* bol;
+
+				if (value->u.bol) {
+					bol = as_boolean_toval(&as_true);
+				} else {
+					bol = as_boolean_toval(&as_false);
+				}
+
+				as_arraylist_append(arglist, bol);
 				break;
 			}
 			case AS_NIL: {
@@ -298,6 +315,42 @@ asql_parse_value_as(char* s, asql_value* value, asql_value_type_t vtype)
 				value->u.dbl = dbl;
 			}
 			else {
+				fprintf(stdout, "Error!  Cannot cast \"%s\" to float!\n", s);
+				return -2;
+			}
+			break;
+		}
+		case ASQL_VALUE_TYPE_BOOL:
+		{
+			char s0 = *s;
+			int bLen = len;
+			if (len > 2 && ((*s == '\'' && s[len - 1] == '\'') || (*s == '\"' && s[len - 1] == '\"')))
+			{
+				s += 1;
+				bLen -= 2;
+			}
+
+			if (strncasecmp(s, "true", bLen) == 0) 
+			{
+				value->type = AS_BOOLEAN;
+				value->u.bol = true;
+			}
+			else if (strncasecmp(s, "false", bLen) == 0) 
+			{
+				value->type = AS_BOOLEAN;
+				value->u.bol = false;
+			}
+
+			char *endptr = 0;
+			int64_t val = strtoll(s, &endptr, 0);
+
+			if (*endptr == 0 || *endptr == s0)
+			{
+				value->type = AS_BOOLEAN;
+				value->u.bol = (val == 0) ? false : true;
+			}
+			else
+			{
 				fprintf(stdout, "Error!  Cannot cast \"%s\" to float!\n", s);
 				return -2;
 			}
