@@ -724,6 +724,18 @@ parse_value(char* s, asql_value* value)
 		return 0;
 	}
 
+	if (strcasecmp(s, "true") == 0) {
+		value->type = AS_BOOLEAN;
+		value->u.bol = true;
+		return 0;
+	}
+
+	if (strcasecmp(s, "false") == 0)
+	{
+		value->type = AS_BOOLEAN;
+		value->u.bol = false;
+		return 0;
+	}
 
 	char* endptr = 0;
 	int64_t val = strtoll(s, &endptr, 0);
@@ -734,6 +746,7 @@ parse_value(char* s, asql_value* value)
 		return 0;
 	}
 
+	// This check should be after all other type checks.
 	if (strstr(s, ".") == NULL) {
 		// was not parsable as int but does not contain '.'
 		return -2;
@@ -746,6 +759,7 @@ parse_value(char* s, asql_value* value)
 		value->u.dbl = dbl;
 		return 0;
 	}
+
 	return -2;
 }
 

@@ -193,9 +193,9 @@ print_dml_help()
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "      Examples:\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', 123, 'abc')\n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3]}'))\n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', LIST('[1, 2, 3]'), MAP('{\"a\": 1, \"b\": 2}'))\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', 123, 'abc', true)\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3]}'), BOOL(1))\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', LIST('[1, 2, 3]'), MAP('{\"a\": 1, \"b\": 2}'), CAST(0 as BOOL))\n");
 	fprintf(stdout, "          INSERT INTO test.demo (PK, gj) VALUES ('key1', GEOJSON('{\"type\": \"Point\", \"coordinates\": [123.4, -56.7]}'))\n");
 	fprintf(stdout, "          DELETE FROM test.demo WHERE PK = 'key1'\n");
 	fprintf(stdout, "      \n");
@@ -266,7 +266,6 @@ print_query_help()
 	fprintf(stdout, "          <args> is a comma-separated list of argument values for the UDF.\n");
 	fprintf(stdout, "          <ns> is the namespace for the records to be queried.\n");
 	fprintf(stdout, "          <set> is the set name for the record to be queried.\n");
-	fprintf(stdout, "          <key> is the record's primary key.\n");
 	fprintf(stdout, "          <bin> is the name of a bin.\n");
 	fprintf(stdout, "          <value> is the value of a bin.\n");
 	fprintf(stdout, "          <lower> is the lower bound for a numeric range query.\n");

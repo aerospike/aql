@@ -1,12 +1,6 @@
 include project/build.makefile
 
-# ifndef CLIENTREPO
-#   $(error Missing required variable: CLIENTREPO. Please define the variable and try again.)
-# endif
-
-# CLIENT_PATH = $(CLIENTREPO)
 CLIENT_PATH = ./modules/c-client
-# CLIENTREPO = $(CLIENT_PATH)
 JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
@@ -23,9 +17,6 @@ ifeq ($(OS),Darwin)
   CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
   ifneq ($(wildcard /usr/local/opt/openssl/include),)
     CFLAGS += -I/usr/local/opt/openssl/include
-    ifeq ($(OPENSSL_STATIC_PATH),)
-      LDFLAGS += -L/usr/local/opt/openssl/lib
-    endif
   endif
 
 else
