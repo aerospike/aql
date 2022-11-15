@@ -52,9 +52,8 @@ typedef enum {
 	INFO_OP,
 	SCAN_OP,
 	RUNFILE_OP,
-	ADMIN_OP,
 	TRUNCATE_OP,
-	OP_MAX = 7
+	OP_MAX = 6
 } atype;
 
 typedef enum {
