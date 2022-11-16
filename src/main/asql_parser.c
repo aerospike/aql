@@ -27,7 +27,6 @@
 
 #include <asql.h>
 #include <asql_tokenizer.h>
-#include <asql_admin.h>
 #include <asql_conf.h>
 #include <asql_info.h>
 #include <asql_key.h>
@@ -65,71 +64,19 @@ static bool parse_name_list(tokenizer* tknzr, as_vector* v, bool allow_empty);
 static bool parse_pkey(tokenizer* tknzr, asql_value* value);
 static bool parse_naked_name_list(tokenizer* tknzr, as_vector* v);
 static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname);
-//static bool parse_predicate(tokenizer* tknzr, asql_predicate* where);
 static bool parse_in(tokenizer* tknzr, asql_name* itype);
 static char* parse_module(tokenizer* tknzr, bool filename_only);
 static char* parse_module_pathname(tokenizer* tknzr);
 static char* parse_module_filename(tokenizer* tknzr);
-static int parse_permission(const char* token);
-static int parse_roles(tokenizer* tknzr, const char* stop, as_vector* /*<char*>*/vector);
-static int parse_privileges(tokenizer* tknzr, const char* stop, as_vector* /*<as_privilege*>*/vector);
 static int parse_cast_expression(tokenizer* tknzr, asql_value* value);
 static int parse_type_expression(tokenizer* tknzr, asql_value* value, asql_value_type_t vtype);
 
-static aconfig* parse_grant_roles(tokenizer* tknzr);
-static aconfig* parse_revoke_roles(tokenizer* tknzr);
-static aconfig* parse_grant_privileges(tokenizer* tknzr);
-static aconfig* parse_revoke_privileges(tokenizer* tknzr);
 static aconfig* parse_query(tokenizer* tknzr, int type);
-static aconfig* parse_createindex(tokenizer* tknzr);
-static aconfig* parse_dropindex(tokenizer* tknzr);
-static aconfig* parse_set_password(tokenizer* tknzr);
-static aconfig* parse_set_whitelist(tokenizer* tknzr);
-static aconfig* parse_create_role(tokenizer* tknzr);
-static aconfig* parse_create_user(tokenizer* tknzr);
-static aconfig* parse_drop_user(tokenizer* tknzr);
-static aconfig* parse_drop_role(tokenizer* tknzr);
-static aconfig* parse_show_user(tokenizer* tknzr);
-static aconfig* parse_show_users(tokenizer* tknzr);
-static aconfig* parse_show_role(tokenizer* tknzr);
-static aconfig* parse_show_roles(tokenizer* tknzr);
 static aconfig* parse_show_info(tokenizer* tknzr);
 
 //=========================================================
 // Inlines and Macros.
 //
-
-static inline bool
-is_role_keyword(tokenizer* tknzr)
-{
-	return strcasecmp(tknzr->tok, "ROLE") == 0
-	        || strcasecmp(tknzr->tok, "ROLES") == 0;
-}
-
-static inline bool
-is_privilege_keyword(tokenizer* tknzr)
-{
-	return strcasecmp(tknzr->tok, "PRIVILEGE") == 0
-	        || strcasecmp(tknzr->tok, "PRIVILEGES") == 0;
-}
-
-static inline bool
-is_whitelist_keyword(tokenizer* tknzr)
-{
-	return strcasecmp(tknzr->tok, "WHITELIST") == 0;
-}
-
-static inline bool
-verify_role(const char* role)
-{
-	return strlen(role) < AS_ROLE_SIZE;
-}
-
-static inline bool
-verify_address(const char* address)
-{
-	return strlen(address) < 128;
-}
 
 #define IF_CURR_TOKEN_NULL_GOTO(x)    \
     if (!tknzr->tok) goto x;
@@ -221,6 +168,7 @@ aql_parse_insert(tokenizer* tknzr)
 
 	pk_config* p = malloc(sizeof(pk_config));
 	bzero(p, sizeof(pk_config));
+	p->optype = ASQL_OP_INSERT;
 	p->type = PRIMARY_INDEX_OP;
 	p->op = WRITE_OP;
 	p->ns = ns;
@@ -293,6 +241,7 @@ aql_parse_delete(tokenizer* tknzr)
 
 	pk_config* p = malloc(sizeof(pk_config));
 	bzero(p, sizeof(pk_config));
+	p->optype = ASQL_OP_DELETE;
 	p->type = PRIMARY_INDEX_OP;
 	p->op = DELETE_OP;
 	p->ns = ns;
@@ -418,59 +367,6 @@ aql_parse_aggregate(tokenizer* tknzr)
 }
 
 aconfig*
-aql_parse_grant(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-
-	aconfig* cfg = 0;
-
-	if (strcasecmp(tknzr->tok, "ROLE") == 0
-	        || strcasecmp(tknzr->tok, "ROLES") == 0) {
-		cfg = parse_grant_roles(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "PRIVILEGE") == 0
-	        || strcasecmp(tknzr->tok, "PRIVILEGES") == 0) {
-		cfg = parse_grant_privileges(tknzr);
-	}
-	else {
-		predicting_parse_error(tknzr);
-		return 0;
-	}
-	return cfg;
-}
-
-aconfig*
-aql_parse_revoke(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-
-	aconfig* cfg = 0;
-
-	if (strcasecmp(tknzr->tok, "ROLE") == 0
-	        || strcasecmp(tknzr->tok, "ROLES") == 0) {
-		cfg = parse_revoke_roles(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "PRIVILEGE") == 0
-	        || strcasecmp(tknzr->tok, "PRIVILEGES") == 0) {
-		cfg = parse_revoke_privileges(tknzr);
-	}
-	return cfg;
-}
-
-aconfig*
-aql_parse_asinfo(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-	asql_name info_str;
-	if (!parse_name(tknzr->tok, &info_str, false)) {
-		return NULL;
-	}
-
-	info_config* i = asql_info_config_create(info_str, NULL, false);
-	return (aconfig*)i;
-}
-
-aconfig*
 aql_parse_desc(tokenizer* tknzr)
 {
 	char* filename = parse_module_filename(tknzr);
@@ -484,69 +380,8 @@ aql_parse_desc(tokenizer* tknzr)
 	sprintf(infocmd, "udf-get:filename=%s\n", filename);
 	free(filename);
 
-	info_config* i = asql_info_config_create(strdup(infocmd), NULL, false);
+	info_config *i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
 	return (aconfig*)i;
-}
-
-aconfig*
-aql_parse_stat(tokenizer* tknzr)
-{
-	get_next_token(tknzr);
-	info_config* i = NULL;
-
-	if (!tknzr->tok)
-		goto stat_error;
-
-	if (!strcasecmp(tknzr->tok, "SYSTEM")) {
-		i = asql_info_config_create(strdup("statistics"), NULL, false);
-	}
-	else if (!strcasecmp(tknzr->tok, "INDEX")) {
-
-		GET_NEXT_TOKEN_OR_GOTO(stat_error);
-
-		asql_name ns = NULL;
-		if (!parse_name(tknzr->tok, &ns, false)) {
-			return NULL;
-		}
-
-		GET_NEXT_TOKEN_OR_GOTO(stat_error);
-
-		asql_name iname = NULL;
-		if (!parse_name(tknzr->tok, &iname, false)) {
-			return NULL;
-		}
-
-		char infocmd[1024];
-		sprintf(infocmd, "sindex/%s/%s\n", ns, iname);
-		i = asql_info_config_create(strdup(infocmd), NULL, false);
-
-		if (iname) free(iname);
-		if (ns) free(ns);
-	}
-	else if (!strcasecmp(tknzr->tok, "NAMESPACE")) {
-
-		GET_NEXT_TOKEN_OR_GOTO(stat_error);
-
-		asql_name ns = NULL;
-		if (!parse_name(tknzr->tok, &ns, false)) {
-			return NULL;
-		}
-
-		char infocmd[1024];
-		sprintf(infocmd, "namespace/%s\n", ns);
-		i = asql_info_config_create(strdup(infocmd), NULL, false);
-
-		if (ns) free(ns);
-	}
-	else {
-		goto stat_error;
-	}
-
-	return (aconfig*)i;
-
-stat_error:
-	predicting_parse_error(tknzr);
-	return NULL;
 }
 
 aconfig*
@@ -558,7 +393,7 @@ aql_parse_registerudf(tokenizer* tknzr)
 		return NULL;
 	}
 
-	info_config* i = asql_info_config_create(strdup("udf-put"), pathname,
+	info_config* i = asql_info_config_create(ASQL_OP_REGISTER, strdup("udf-put"), pathname,
 			true);
 	return (aconfig*)i;
 }
@@ -573,28 +408,8 @@ aql_parse_removeudf(tokenizer* tknzr)
 		return NULL;
 	}
 
-	info_config* i = asql_info_config_create(strdup("udf-remove"),
+	info_config* i = asql_info_config_create(ASQL_OP_REMOVE, strdup("udf-remove"),
 			filename, true);
-	return (aconfig*)i;
-}
-
-aconfig*
-aql_parse_killquery(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-	char infocmd[1024];
-	sprintf(infocmd, "query-kill:trid=%s", tknzr->tok);
-	info_config* i = asql_info_config_create(strdup(infocmd), NULL, false);
-	return (aconfig*)i;
-}
-
-aconfig*
-aql_parse_killscan(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-	char infocmd[1024];
-	sprintf(infocmd, "scan-abort:id=%s", tknzr->tok);
-	info_config* i = asql_info_config_create(strdup(infocmd), NULL, false);
 	return (aconfig*)i;
 }
 
@@ -609,6 +424,7 @@ aql_parse_run(tokenizer* tknzr)
 	}
 
 	runfile_config* r = malloc(sizeof(runfile_config));
+	r->optype = ASQL_OP_RUN;
 	r->type = RUNFILE_OP;
 	r->fname = fname;
 	return (aconfig*)r;
@@ -625,16 +441,8 @@ aconfig*
 aql_parserun_set(tokenizer* tknzr)
 {
 	GET_NEXT_TOKEN_OR_ERROR(NULL);
-
-	if (!strcasecmp(tknzr->tok, "PASSWORD")) {
-		return parse_set_password(tknzr);
-	}
-
-	if (!strcasecmp(tknzr->tok, "WHITELIST")) {
-		return parse_set_whitelist(tknzr);
-	}
-
 	char* name = strdup(tknzr->tok);
+
 	GET_NEXT_TOKEN_OR_ERROR(NULL);
 	char* value = tknzr->tok;
 
@@ -673,108 +481,12 @@ aql_parserun_reset(tokenizer* tknzr)
 }
 
 
-aconfig*
-aql_parserun_print(tokenizer* tknzr)
-{
-	char* printCmd = strdup(tknzr->ocmd);
-	char* printContent = printCmd + 6;
-	if (printContent) {
-		fprintf(stdout, "%s\n", printContent);
-	}
-	if (printCmd) {
-		free(printCmd);
-	}
-	fprintf(stdout, "\n\n");
-	fprintf(stderr, "Warning: The PRINT command has been deprecated and will be removed in the next release of aql.\n"); 
-	return NULL;
-}
 
-aconfig*
-aql_parserun_system(tokenizer* tknzr)
-{
-	char* syscmd = strdup(tknzr->ocmd);
-	char* cmd = syscmd + 7;
-
-	if (cmd) {
-		fprintf(stdout, "%s\n", cmd);
-		int rv = system(cmd);
-		if (rv == -1) {
-			fprintf(
-			stderr,
-			        "Error executing system command. Could not create sub-process\n");
-		}
-		else if (cmd != NULL && rv) {
-			fprintf(stderr, "Error %d executing system command.\n", rv);
-		}
-		else if (cmd == NULL && !rv) {
-			fprintf(
-			stderr,
-			        "Error executing system command. Command is passed is NULL.\n");
-		}
-	}
-
-	if (syscmd) {
-		free(syscmd);
-	}
-
-	fprintf(stdout, "\n\n");
-	fprintf(stderr, "Warning: The SYSTEM command has been deprecated and will be removed in the next release of aql.\n");
-	return NULL;
-}
-
-aconfig*
-aql_parse_create(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-	if (!strcasecmp(tknzr->tok, "INDEX") || !strcasecmp(tknzr->tok, "LIST")
-	        || !strcasecmp(tknzr->tok, "MAPKEYS")
-	        || !strcasecmp(tknzr->tok, "MAPVALUES")) {
-		return parse_createindex(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "USER") == 0) {
-		return parse_create_user(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "ROLE") == 0) {
-		return parse_create_role(tknzr);
-	}
-	return NULL;
-}
-
-aconfig*
-aql_parse_drop(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-
-	aconfig* cfg = 0;
-
-	if (strcasecmp(tknzr->tok, "INDEX") == 0) {
-		cfg = parse_dropindex(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "USER") == 0) {
-		cfg = parse_drop_user(tknzr);
-	}
-	else if (strcasecmp(tknzr->tok, "ROLE") == 0) {
-		cfg = parse_drop_role(tknzr);
-	}
-	return cfg;
-}
 
 aconfig*
 aql_parse_show(tokenizer* tknzr)
 {
 	GET_NEXT_TOKEN_OR_GOTO(show_error)
-	if (!strcasecmp(tknzr->tok, "USERS")) {
-		return parse_show_users(tknzr);
-	}
-	else if (!strcasecmp(tknzr->tok, "USER")) {
-		return parse_show_user(tknzr);
-	}
-	else if (!strcasecmp(tknzr->tok, "ROLES")) {
-		return parse_show_roles(tknzr);
-	}
-	else if (!strcasecmp(tknzr->tok, "ROLE")) {
-		return parse_show_role(tknzr);
-	}
 
 	return parse_show_info(tknzr);
 
@@ -1012,6 +724,18 @@ parse_value(char* s, asql_value* value)
 		return 0;
 	}
 
+	if (strcasecmp(s, "true") == 0) {
+		value->type = AS_BOOLEAN;
+		value->u.bol = true;
+		return 0;
+	}
+
+	if (strcasecmp(s, "false") == 0)
+	{
+		value->type = AS_BOOLEAN;
+		value->u.bol = false;
+		return 0;
+	}
 
 	char* endptr = 0;
 	int64_t val = strtoll(s, &endptr, 0);
@@ -1022,6 +746,7 @@ parse_value(char* s, asql_value* value)
 		return 0;
 	}
 
+	// This check should be after all other type checks.
 	if (strstr(s, ".") == NULL) {
 		// was not parsable as int but does not contain '.'
 		return -2;
@@ -1034,6 +759,7 @@ parse_value(char* s, asql_value* value)
 		value->u.dbl = dbl;
 		return 0;
 	}
+
 	return -2;
 }
 
@@ -1342,214 +1068,6 @@ parse_module_filename(tokenizer* tknzr)
 	return parse_module(tknzr, true);
 }
 
-static int
-parse_permission(const char* token)
-{
-	if (strcasecmp(token, "user-admin") == 0) {
-		return AS_PRIVILEGE_USER_ADMIN;
-	}
-
-	if (strcasecmp(token, "sys-admin") == 0) {
-		return AS_PRIVILEGE_SYS_ADMIN;
-	}
-
-	if (strcasecmp(token, "data-admin") == 0) {
-		return AS_PRIVILEGE_DATA_ADMIN;
-	}
-
-	if (strcasecmp(token, "read") == 0) {
-		return AS_PRIVILEGE_READ;
-	}
-
-	if (strcasecmp(token, "read-write") == 0) {
-		return AS_PRIVILEGE_READ_WRITE;
-	}
-
-	if (strcasecmp(token, "read-write-udf") == 0) {
-		return AS_PRIVILEGE_READ_WRITE_UDF;
-	}
-
-	if (strcasecmp(token, "write") == 0) {
-		return AS_PRIVILEGE_WRITE;
-	}
-	return -1;
-}
-
-static int
-parse_roles(tokenizer* tknzr, const char* stop, as_vector* /*<char*>*/vector)
-{
-	asql_name name = NULL;
-
-	while (1) {
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (strcmp(tknzr->tok, ",") == 0) {
-			continue;
-		}
-
-		if (!verify_role(tknzr->tok)) {
-			char err_msg[1024];
-			snprintf(err_msg, 1023, "Invalid role: %s", tknzr->tok);
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-			return -1;
-		}
-
-		if (!parse_name(tknzr->tok, &name, false)) {
-			return -1;
-		}
-
-		as_vector_append(vector, &name);
-
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (strcmp(tknzr->tok, ",") == 0) {
-			continue;
-		}
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		char err_msg[1024];
-		snprintf(err_msg, 1023, "Role not separated by comma: %s", tknzr->tok);
-		g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-		return -1;
-	}
-}
-
-static int
-parse_privileges(tokenizer* tknzr, const char* stop,
-                 as_vector* /*<as_privilege*>*/vector)
-{
-	as_privilege* priv;
-
-	while (1) {
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (strcmp(tknzr->tok, ",") == 0) {
-			continue;
-		}
-
-		if (strcmp(tknzr->tok, ".") == 0) {
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT,
-			                         "Invalid privilege: Extraneous '.'", NULL);
-			return -1;
-		}
-
-		int code = parse_permission(tknzr->tok);
-
-		if (code < 0) {
-			char err_msg[1024];
-			snprintf(err_msg, 1023, "Invalid privilege: %s", tknzr->tok);
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-			return -1;
-		}
-
-		priv = malloc(sizeof(as_privilege));
-		priv->code = code;
-		priv->ns[0] = 0;
-		priv->set[0] = 0;
-		as_vector_append(vector, &priv);
-
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (strcmp(tknzr->tok, ",") == 0) {
-			continue;
-		}
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (strcmp(tknzr->tok, ".") != 0) {
-			char err_msg[1024];
-			snprintf(err_msg, 1023, "Expected '.' but received '%s'",
-			         tknzr->tok);
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-			return -1;
-		}
-
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		as_strncpy(priv->ns, tknzr->tok, sizeof(priv->ns));
-
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (strcmp(tknzr->tok, ",") == 0) {
-			continue;
-		}
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (strcmp(tknzr->tok, ".") != 0) {
-			char err_msg[1024];
-			snprintf(err_msg, 1023, "Expected '.' but received '%s'",
-			         tknzr->tok);
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-			return -1;
-		}
-
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		as_strncpy(priv->set, tknzr->tok, sizeof(priv->set));
-	}
-}
-
-static int
-parse_address(tokenizer* tknzr, const char* stop, as_string_builder* sb)
-{
-	as_string_builder_reset(sb);
-
-	while (1) {
-		GET_NEXT_TOKEN_OR_RETURN(0)
-
-		if (stop && strcasecmp(tknzr->tok, stop) == 0) {
-			return 1;
-		}
-
-		if (tknzr->tok[0] == ',') {
-			return 2;
-		}
-
-		as_string_builder_append(sb, tknzr->tok);
-	}
-}
-
-static int
-parse_whitelist(tokenizer* tknzr, const char* stop, as_vector* /*<char*>*/vector)
-{
-	as_string_builder sb;
-	as_string_builder_inita(&sb, 128, false);
-
-	int status;
-
-	while (1) {
-		status = parse_address(tknzr, stop, &sb);
-
-		if (sb.length > 0) {
-			char* address;
-
-			if (parse_name(sb.data, &address, false)) {
-				as_vector_append(vector, &address);
-			}
-		}
-
-		if (status != 2) {
-			return status;
-		}
-	}
-}
-
 // Parse expressions of the form:  CAST(<ValueString> AS <TypeName>)
 static int
 parse_cast_expression(tokenizer* tknzr, asql_value* value)
@@ -1650,144 +1168,6 @@ parse_error:
 	return -1;
 }
 
-static aconfig*
-parse_grant_roles(tokenizer* tknzr)
-{
-	admin_config* cfg = 0;
-
-	cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_GRANT;
-	cfg->cmd = AQL_GRANT_ROLES;
-	cfg->list = as_vector_create(sizeof(char*), 5);
-
-	int status = parse_roles(tknzr, "TO", cfg->list);
-
-	if (status < 0) {
-		destroy_aconfig((aconfig*)cfg);
-		return NULL;
-	}
-
-	if (status == 1) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name(tknzr->tok, &cfg->user, false)) {
-			return NULL;
-		}
-
-		return (aconfig*)cfg;
-	}
-
-ERROR:
-	predicting_parse_error(tknzr);
-
-	if (cfg) {
-		destroy_aconfig((aconfig*)cfg);
-	}
-	return 0;
-}
-
-static aconfig*
-parse_revoke_roles(tokenizer* tknzr)
-{
-	admin_config* cfg = 0;
-
-	cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_REVOKE;
-	cfg->cmd = AQL_REVOKE_ROLES;
-	cfg->list = as_vector_create(sizeof(char*), 5);
-
-	int status = parse_roles(tknzr, "FROM", cfg->list);
-
-	if (status < 0) {
-		destroy_aconfig((aconfig*)cfg);
-		return 0;
-	}
-
-	if (status == 1) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-
-		if (!parse_name(tknzr->tok, &cfg->user, false)) {
-			return NULL;
-		}
-		return (aconfig*)cfg;
-	}
-
-ERROR:
-	predicting_parse_error(tknzr);
-
-	if (cfg) {
-		destroy_aconfig((aconfig*)cfg);
-	}
-	return 0;
-}
-
-static aconfig*
-parse_grant_privileges(tokenizer* tknzr)
-{
-	admin_config* cfg = 0;
-
-	cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_GRANT;
-	cfg->cmd = AQL_GRANT_PRIVILEGES;
-	cfg->list = as_vector_create(sizeof(as_privilege*), 5);
-
-	int status = parse_privileges(tknzr, "TO", cfg->list);
-
-	if (status < 0) {
-		destroy_aconfig((aconfig*)cfg);
-		return 0;
-	}
-
-	if (status == 1) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name(tknzr->tok, &cfg->role, false)) {
-			return NULL;
-		}
-
-		return (aconfig*)cfg;
-	}
-
-ERROR:
-	predicting_parse_error(tknzr);
-
-	if (cfg) {
-		destroy_aconfig((aconfig*)cfg);
-	}
-	return 0;
-}
-
-static aconfig*
-parse_revoke_privileges(tokenizer* tknzr)
-{
-	admin_config* cfg = 0;
-
-	cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_REVOKE;
-	cfg->cmd = AQL_REVOKE_PRIVILEGES;
-	cfg->list = as_vector_create(sizeof(as_privilege*), 5);
-
-	int status = parse_privileges(tknzr, "FROM", cfg->list);
-
-	if (status < 0) {
-		destroy_aconfig((aconfig*)cfg);
-		return 0;
-	}
-
-	if (status == 1) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name(tknzr->tok, &cfg->role, false)) {
-			return NULL;
-		}
-		return (aconfig*)cfg;
-	}
-
-ERROR:
-	predicting_parse_error(tknzr);
-
-	if (cfg) {
-		destroy_aconfig((aconfig*)cfg);
-	}
-	return 0;
-}
 
 static aconfig*
 parse_query(tokenizer* tknzr, int type)
@@ -1860,6 +1240,7 @@ parse_query(tokenizer* tknzr, int type)
 	if (!tknzr->tok) {
 		scan_config* s = malloc(sizeof(scan_config));
 		bzero(s, sizeof(scan_config));
+		s->optype = type;
 		s->type = SCAN_OP;
 		s->ns = ns;
 		s->set = set;
@@ -1898,6 +1279,7 @@ parse_query(tokenizer* tknzr, int type)
 		// Parse primary key value.
 		pk_config* p = malloc(sizeof(pk_config));
 		bzero(p, sizeof(pk_config));
+		p->optype = type;
 		p->type = PRIMARY_INDEX_OP;
 		p->op = READ_OP;
 		p->ns = ns;
@@ -1922,6 +1304,7 @@ parse_query(tokenizer* tknzr, int type)
 
 	sk_config* s = malloc(sizeof(sk_config));
 	bzero(s, sizeof(sk_config));
+	s->optype = type;
 	s->type = SECONDARY_INDEX_OP;
 	s->ns = ns;
 	s->set = set;
@@ -1941,10 +1324,16 @@ parse_query(tokenizer* tknzr, int type)
 		return NULL;
 	}
 
-	return (aconfig*)s;
+	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
 ERROR:
-	predicting_parse_error(tknzr);
+	if (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or")) {
+		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->tok);
+		fprintf(stderr, "Only a single predicate is supported.\n");
+	} else {
+		predicting_parse_error(tknzr);
+	}
+
 	if (ns) free(ns);
 	if (set) free(set);
 	if (udfpkg) free(udfpkg);
@@ -1965,468 +1354,28 @@ ERROR:
 }
 
 static aconfig*
-parse_createindex(tokenizer* tknzr)
-{
-	asql_name ns = NULL;
-	asql_name set = NULL;
-	asql_name itype = NULL;
-	asql_name iname = NULL;
-	asql_name bname = NULL;
-	asql_name deco = NULL;
-
-	// CREATE <lists,mapkeys,mapvalues>
-	if (strcasecmp(tknzr->tok, "LIST") == 0
-	        || strcasecmp(tknzr->tok, "MAPKEYS") == 0
-	        || strcasecmp(tknzr->tok, "MAPVALUES") == 0) {
-		deco = strdup(tknzr->tok);
-		GET_NEXT_TOKEN_OR_GOTO(create_end)
-	}
-
-	// INDEX <index name>
-	if (strcasecmp(tknzr->tok, "INDEX")) {
-		goto create_end;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-	if (!parse_name(tknzr->tok, &iname, false)) {
-		goto create_end;
-	}
-
-	// ON <ns.set>
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-	if (strcasecmp(tknzr->tok, "ON"))
-		goto create_end;
-
-
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-	if (!parse_ns_and_set(tknzr, &ns, &set))
-		goto create_end;
-	if (set) {
-		GET_NEXT_TOKEN_OR_GOTO(create_end)
-	}
-
-
-	// (<bin_path>)
-	if (strcmp(tknzr->tok, "("))
-		goto create_end;
-
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-	if (!parse_name(tknzr->tok, &bname, true)) {
-		goto create_end;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-	if (strcmp(tknzr->tok, ")"))
-		goto create_end;
-	GET_NEXT_TOKEN_OR_GOTO(create_end)
-
-
-	// numeric/string/geo2dspher
-	if (strcasecmp(tknzr->tok, "NUMERIC") && strcasecmp(tknzr->tok, "STRING")
-	        && strcasecmp(tknzr->tok, "GEO2DSPHERE")) {
-		goto create_end;
-	}
-	itype = strdup(tknzr->tok);
-
-
-	char infocmd[1024]; /* Command */
-	char infobcmd[1024]; // Backout Command
-	if (!deco) {
-		sprintf(infocmd, "sindex-create:ns=%s%s%s;indexname=%s;"
-		        "numbins=1;indexdata=%s,%s;priority=normal\n",
-		        ns, (set ? ";set=": ""), (set ? set: ""), iname, bname, itype);
-	}
-	else {
-		sprintf(infocmd, "sindex-create:ns=%s%s%s;indexname=%s;"
-		        "numbins=1;indextype=%s;indexdata=%s,%s;priority=normal\n",
-		        ns, (set ? ";set=": ""), (set ? set: ""), iname, deco, bname,
-		        itype);
-	}
-	sprintf(infobcmd, "sindex-delete:ns=%s%s%s;indexname=%s\n", ns,
-	        (set ? ";set=": ""), (set ? set: ""), iname);
-
-	info_config* i = asql_info_config_create(strdup(infocmd), strdup(infobcmd),
-			true);
-
-	if (ns) free(ns);
-	if (set) free(set);
-	if (itype) free(itype);
-	if (iname) free(iname);
-	if (bname) free(bname);
-	if (deco) free(deco);
-
-	return (aconfig*)i;
-
-create_end:
-	if (ns) free(ns);
-	if (set) free(set);
-	if (itype) free(itype);
-	if (iname) free(iname);
-	if (bname) free(bname);
-	if (deco) free(deco);
-
-	predicting_parse_error(tknzr);
-	return NULL;
-}
-
-static aconfig*
-parse_dropindex(tokenizer* tknzr)
-{
-	asql_name ns = NULL;
-	asql_name set = NULL;
-	asql_name iname = NULL;
-
-	GET_NEXT_TOKEN_OR_GOTO(drop_end)
-	if (!parse_ns_and_set(tknzr, &ns, &set))
-		goto drop_end;
-	if (set) {
-		GET_NEXT_TOKEN_OR_GOTO(drop_end)
-	}
-
-	if (!parse_name(tknzr->tok, &iname, false)) {
-		goto drop_end;
-	}
-
-	char infocmd[1024];
-	sprintf(infocmd, "sindex-delete:ns=%s%s%s;indexname=%s\n", ns,
-	        (set ? ";set=": ""), (set ? set: ""), iname);
-
-	info_config* i = asql_info_config_create(strdup(infocmd), NULL, true);
-
-	if (ns) free(ns);
-	if (set) free(set);
-	if (iname) free(iname);
-
-	return (aconfig*)i;
-
-drop_end:
-	if (ns) free(ns);
-	if (set) free(set);
-	if (iname) free(iname);
-
-	predicting_parse_error(tknzr);
-	return NULL;
-}
-
-static aconfig*
-parse_set_password(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_SET;
-	cfg->cmd = AQL_SET_PASSWORD;
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	// Empty password is allowed !!
-	if (! parse_name(tknzr->tok, &cfg->password, true)) {
-		goto ERROR;
-	}
-
-	int ret = as_sql_lexer(0, &tknzr->tok);
-
-	if (ret == -2) {
-		goto ERROR;
-	}
-
-	if (!tknzr->tok) {
-		goto END;
-	}
-
-	if (strcasecmp(tknzr->tok, "FOR") == 0) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name(tknzr->tok, &cfg->user, false)) {
-			goto ERROR;
-		}
-	}
-	else {
-		goto ERROR;
-	}
-
-END:
-	fprintf(stdout, "\n");
-	return (aconfig*)cfg;
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_set_whitelist(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->whitelist = as_vector_create(sizeof(char*), 16);
-	cfg->optype = ASQL_OP_SET;
-	cfg->cmd = AQL_SET_WHITELIST;
-
-	int status = parse_whitelist(tknzr, "FOR", cfg->whitelist);
-
-	if (status < 0) {
-		destroy_aconfig((aconfig*)cfg);
-		return 0;
-	}
-
-	if (status == 1) {
-		GET_NEXT_TOKEN_OR_GOTO(ERROR)
-		if (!parse_name(tknzr->tok, &cfg->role, false)) {
-			goto ERROR;
-		}
-
-		return (aconfig*)cfg;
-	}
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_create_role(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->whitelist = as_vector_create(sizeof(char*), 16);
-	cfg->list = as_vector_create(sizeof(as_privilege*), 16);
-	cfg->optype = ASQL_OP_CREATE;
-	cfg->cmd = AQL_CREATE_ROLE;
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_name(tknzr->tok, &cfg->role, false)) {
-		return 0;
-	}
-
-	int status = 0;
-
-	while (true) {
-		get_next_token(tknzr);
-
-		if (tknzr->tok) {
-			if (is_privilege_keyword(tknzr)) {
-				status = parse_privileges(tknzr, "WHITELIST", cfg->list);
-
-				if (status < 0) {
-					destroy_aconfig((aconfig*)cfg);
-					return 0;
-				}
-
-				if (status == 1) {
-					status = parse_whitelist(tknzr, 0, cfg->whitelist);
-
-					if (status < 0) {
-						destroy_aconfig((aconfig*)cfg);
-						return 0;
-					}
-				}
-				break;
-			}
-			else if (is_whitelist_keyword(tknzr)) {
-				status = parse_whitelist(tknzr, 0, cfg->whitelist);
-
-				if (status < 0) {
-					destroy_aconfig((aconfig*)cfg);
-					return 0;
-				}
-				break;
-			}
-		}
-		else {
-			break;
-		}
-	}
-
-	if (! (cfg->list->size > 0 || cfg->whitelist->size > 0)) {
-		g_renderer->render_error(AEROSPIKE_ERR_CLIENT,
-		                         "Either privileges or whitelist is required", NULL);
-		return 0;
-	}
-	return (aconfig*)cfg;
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_create_user(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->list = as_vector_create(sizeof(asql_name), 5);
-	cfg->optype = ASQL_OP_CREATE;
-	cfg->cmd = AQL_CREATE_USER;
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_name(tknzr->tok, &cfg->user, false)) {
-		goto ERROR;
-	}
-	// Default to empty password
-	cfg->password = strdup("");
-
-	while (true) {
-		int ret = as_sql_lexer(0, &tknzr->tok);
-
-		if (ret == -2) {
-			goto ERROR;
-		}
-
-		if (tknzr->tok) {
-			if (strcasecmp(tknzr->tok, "PASSWORD") == 0) {
-				GET_NEXT_TOKEN_OR_GOTO(ERROR)
-				if (!parse_name(tknzr->tok, &cfg->password, true)) {
-					goto ERROR;
-				}
-			}
-			else if (is_role_keyword(tknzr)) {
-				if (parse_roles(tknzr, 0, cfg->list) < 0) {
-					destroy_aconfig((aconfig*)cfg);
-					return 0;
-				}
-				break;
-			}
-			else {
-				goto ERROR;
-			}
-		}
-		else {
-			break;
-		}
-	}
-	return (aconfig*)cfg;
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_drop_user(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_DROP;
-	cfg->cmd = AQL_DROP_USER;
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_name(tknzr->tok, &cfg->user, false)) {
-		return 0;
-	}
-	return (aconfig*)cfg;
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_drop_role(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_DROP;
-	cfg->cmd = AQL_DROP_ROLE;
-
-	GET_NEXT_TOKEN_OR_GOTO(ERROR)
-	if (!parse_name(tknzr->tok, &cfg->role, false)) {
-		return 0;
-	}
-	return (aconfig*)cfg;
-
-ERROR:
-	predicting_parse_error(tknzr);
-	destroy_aconfig((aconfig*)cfg);
-	return 0;
-}
-
-static aconfig*
-parse_show_user(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_SHOW;
-	cfg->cmd = AQL_SHOW_USER;
-
-	GET_NEXT_TOKEN_OR_GOTO(END)
-	if (!parse_name(tknzr->tok, &cfg->user, false)) {
-		return 0;
-	}
-	return (aconfig*)cfg;
-
-END:
-	return (aconfig*)cfg;
-}
-
-static aconfig*
-parse_show_users(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_SHOW;
-	cfg->cmd = AQL_SHOW_USERS;
-	return (aconfig*)cfg;
-}
-
-static aconfig*
-parse_show_role(tokenizer* tknzr)
-{
-	get_next_token(tknzr);
-
-	if (!tknzr->tok) {
-		g_renderer->render_error(AEROSPIKE_ERR_CLIENT, "Role is required",
-		NULL);
-		return 0;
-	}
-
-	if (!verify_role(tknzr->tok)) {
-		char err_msg[1024];
-		snprintf(err_msg, 1023, "Invalid role: %s", tknzr->tok);
-		g_renderer->render_error(AEROSPIKE_ERR_CLIENT, err_msg, NULL);
-		return 0;
-	}
-
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_SHOW;
-	cfg->cmd = AQL_SHOW_ROLE;
-	if (!parse_name(tknzr->tok, &cfg->role, false)) {
-		return 0;
-	}
-	return (aconfig*)cfg;
-}
-
-static aconfig*
-parse_show_roles(tokenizer* tknzr)
-{
-	admin_config* cfg = aql_admin_config_create();
-	cfg->optype = ASQL_OP_SHOW;
-	cfg->cmd = AQL_SHOW_ROLES;
-	return (aconfig*)cfg;
-}
-
-static aconfig*
 parse_show_info(tokenizer* tknzr)
 {
 	info_config* i = NULL;
 
 	if (!strcasecmp(tknzr->tok, "NAMESPACES")) {
-		i = asql_info_config_create(strdup("namespaces"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("namespaces"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "SETS")) {
-		i = asql_info_config_create(strdup("sets"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("sets"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "BINS")) {
-		i = asql_info_config_create(strdup("bins"), NULL, false);
-	}
-	else if (!strcasecmp(tknzr->tok, "QUERIES")) {
-		i = asql_info_config_create(strdup("jobs:module=query"), NULL, false);
-	}
-	else if (!strcasecmp(tknzr->tok, "SCANS")) {
-		i = asql_info_config_create(strdup("jobs:module=scan"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("bins"), NULL, false);
 	}
 	else if (!strcasecmp(tknzr->tok, "PACKAGES")
 	        || !strcasecmp(tknzr->tok, "MODULES")) {
-		i = asql_info_config_create(strdup("udf-list"), NULL, false);
+		i = asql_info_config_create(ASQL_OP_SHOW, strdup("udf-list"), NULL, false);
 	}
-	else if (!strcasecmp(tknzr->tok, "INDEXES")) {
+	else if (!strcasecmp(tknzr->tok, "INDEXES"))
+	{
 		get_next_token(tknzr);
 		if (!tknzr->tok) {
-			i = asql_info_config_create(strdup("sindex-list:"), NULL, false);
+			i = asql_info_config_create(ASQL_OP_SHOW, strdup("sindex-list:"), NULL, false);
 		}
 		else {
 			asql_name ns = NULL;
@@ -2442,7 +1391,7 @@ parse_show_info(tokenizer* tknzr)
 			else
 				sprintf(infocmd, "sindex-list:ns=%s;\n", ns);
 
-			i = asql_info_config_create(strdup(infocmd), NULL, false);
+			i = asql_info_config_create(ASQL_OP_SHOW, strdup(infocmd), NULL, false);
 
 			if (ns) free(ns);
 			if (set) free(set);

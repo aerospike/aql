@@ -36,6 +36,7 @@ typedef enum asql_value_type_e {
 	ASQL_VALUE_TYPE_NONE,
 	ASQL_VALUE_TYPE_INT,
 	ASQL_VALUE_TYPE_FLOAT,
+	ASQL_VALUE_TYPE_BOOL,
 	ASQL_VALUE_TYPE_GEOJSON,
 	ASQL_VALUE_TYPE_JSON,
 	ASQL_VALUE_TYPE_LIST,
@@ -52,6 +53,7 @@ typedef struct {
 		double dbl;
 		int64_t i64;
 		char* str;
+		bool bol;
 	} u;
 } asql_value;
 

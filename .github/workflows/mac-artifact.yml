@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready, TOOLS-1994-build-mac-in-action]
+    branches: [actionsHub, master, test-ready]
   pull_request:
     branches: [actionsHub]
   workflow_call:
@@ -52,11 +52,11 @@ jobs:
         id: cache-aql
         env:
           cache-name: cache-aql
-          cache-index: "4" # To clear the cache if needed.
+          cache-index: "9" # To clear the cache if needed.
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/target
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles('**/*.c') }}-${{ hashFiles('**/*.h') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles(format('{0}/**/*.c', steps.working-dir.outputs.value)) }}-${{ hashfiles(format('{0}/**/*.h', steps.working-dir.outputs.value)) }}
       - name: Download C Client Deps
         run: |
           brew install automake
@@ -68,7 +68,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/c-client/**/*', steps.working-dir.outputs.value)) }}
       - name: Cache Jansson
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
@@ -77,7 +77,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/jansson') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/jansson/**/*', steps.working-dir.outputs.value)) }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
@@ -88,7 +88,15 @@ jobs:
         run: |
           cd target/Darwin-x86_64/bin
           ./aql -e "info" 2>&1 | grep "Failed to connect"
-      - uses: actions/upload-artifact@v3
+      - name: Set Upload Arch
+        uses: haya14busa/action-cond@v1
+        id: upload-arch
+        with:
+          cond: ${{ runner.arch == 'X64' }}
+          if_true: x86_64
+          if_false: aarch64 # TODO review this when adding m1 support.
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
-          path: ${{ steps.working-dir.outputs.value }}/target/Darwin-x86_64/bin/aql
+          path: ${{ steps.working-dir.outputs.value }}/target/Darwin-${{ steps.upload-arch.outputs.value }}/bin/aql

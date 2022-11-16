@@ -1,12 +1,6 @@
 include project/build.makefile
 
-# ifndef CLIENTREPO
-#   $(error Missing required variable: CLIENTREPO. Please define the variable and try again.)
-# endif
-
-# CLIENT_PATH = $(CLIENTREPO)
 CLIENT_PATH = ./modules/c-client
-# CLIENTREPO = $(CLIENT_PATH)
 JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
@@ -23,9 +17,6 @@ ifeq ($(OS),Darwin)
   CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
   ifneq ($(wildcard /usr/local/opt/openssl/include),)
     CFLAGS += -I/usr/local/opt/openssl/include
-    ifeq ($(OPENSSL_STATIC_PATH),)
-      LDFLAGS += -L/usr/local/opt/openssl/lib
-    endif
   endif
 
 else
@@ -111,7 +102,6 @@ OBJECTS =
 OBJECTS += main.o
 OBJECTS += asql.o
 OBJECTS += $(LEXER_SRC:.c=.o)
-OBJECTS += asql_admin.o
 OBJECTS += asql_explain.o
 OBJECTS += asql_info.o
 OBJECTS += asql_key.o
@@ -170,11 +160,12 @@ tags etags:
 	etags `find . $(JANSSON_PATH) -name "*.[chl]"`
 
 cleanmodules:
+	$(MAKE) -C $(CLIENT_PATH) clean
+	$(MAKE) -C toml clean
 	if [ -e '$(JANSSON_PATH)/Makefile' ]; then \
-		$(MAKE) -C jansson clean; \
-		$(MAKE) -C jansson distclean; \
+		$(MAKE) -C $(JANSSON_PATH) clean || true; \
+		$(MAKE) -C $(JANSSON_PATH) distclean || true; \
 	fi; \
-  $(MAKE) -C c-client clean
 
 .PHONY: cleanall
 cleanall: clean cleanmodules

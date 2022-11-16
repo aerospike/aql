@@ -43,7 +43,6 @@ typedef struct {
 // Forward Declarations.
 //
 
-static void print_print_help();
 static void print_ddl_help();
 static void print_dml_help();
 static void print_query_help();
@@ -66,29 +65,14 @@ const print_entry print_table[ASQL_OP_MAX] = {
 	{ "SELECT", print_query_help },
 	{ "AGGREGATE", print_query_help },
 
-	{ "DROP", print_ddl_help },
-	{ "CREATE", print_ddl_help },
-	{ "GRANT", print_ddl_help },
-	{ "REVOKE", print_ddl_help },
-	{ "REGISTER", print_ddl_help },
-	{ "REMOVE", print_ddl_help },
-
-
 	{ "SHOW", print_admin_help },
 	{ "DESC", print_admin_help },
-	{ "STAT", print_admin_help },
-
-	{ "KILL_QUERY", print_admin_help },
-	{ "KILL_SCAN", print_admin_help },
 
 	{ "RUN", print_admin_help },
-	{ "ASINFO", print_admin_help },
 
 	{ "SET", print_setting_help },
 	{ "GET", print_setting_help },
 	{ "RESET", print_setting_help },
-	{ "PRINT", print_print_help },
-	{ "SYSTEM", print_admin_help }
 };
 
 
@@ -104,7 +88,7 @@ print_version()
 	fprintf(stdout, "Aerospike Query Client\n");
 	fprintf(stdout, "Version %s\n", AQL_VERSION);
 	fprintf(stderr, "C Client Version %s\n", aerospike_client_version);
-	fprintf(stdout, "Copyright 2012-2021 Aerospike. All rights reserved.\n");
+	fprintf(stdout, "Copyright 2012-2022 Aerospike. All rights reserved.\n");
 }
 
 void
@@ -128,7 +112,6 @@ print_help(const char* cmd, bool bShowOptions)
 		print_admin_help();
 		print_setting_help();
 		fprintf(stdout, "    OTHER\n");
-		print_print_help();
 		fprintf(stdout, "        HELP\n");
 		fprintf(stdout, "        QUIT|EXIT|Q\n");
 		fprintf(stdout, "\n\n");
@@ -156,29 +139,8 @@ print_help(const char* cmd, bool bShowOptions)
 //
 
 static void
-print_print_help()
-{
-	fprintf(stdout, "        PRINT <string_to_echo> (DEPRECATED)\n");
-	fprintf(stdout, "            Echo the given input.\n");
-	fprintf(stdout, "            Example:\n");
-	fprintf(stdout, "            \n");
-	fprintf(stdout, "                PRINT Hello world.\n");
-	fprintf(stdout, "                Hello world.\n");
-	fprintf(stdout, "            \n");
-}
-
-static void
 print_ddl_help()
 {
-	fprintf(stdout, "  DDL (DEPRECATED)\n");
-	fprintf(stdout, "      CREATE INDEX <index> ON <ns>[.<set>] (<bin>) NUMERIC|STRING|GEO2DSPHERE\n");
-	fprintf(stdout, "      CREATE LIST/MAPKEYS/MAPVALUES INDEX <index> ON <ns>[.<set>] (<bin>) NUMERIC|STRING|GEO2DSPHERE\n");
-	fprintf(stdout, "      DROP INDEX <ns>[.<set>] <index>\n");
-	fprintf(stdout, "      Examples:\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "          CREATE INDEX idx_foo ON test.demo (foo) NUMERIC\n");
-	fprintf(stdout, "          DROP INDEX test.demo idx_foo\n");
-	fprintf(stdout, "      \n");
 	fprintf(stdout, "  MANAGE UDFS\n");
 	fprintf(stdout, "      REGISTER MODULE '<filepath>'\n");
 	fprintf(stdout, "      REMOVE MODULE <filename>\n");
@@ -190,24 +152,6 @@ print_ddl_help()
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "          REGISTER MODULE '~/test.lua' \n");
 	fprintf(stdout, "          REMOVE MODULE test.lua\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "  USER ADMINISTRATION (DEPRECATED)\n");
-	fprintf(stdout, "      CREATE USER <user> PASSWORD <password> ROLE[S] <role1>,<role2>...\n");
-	fprintf(stdout, "          pre-defined roles: read|read-write|read-write-udf|sys-admin|user-admin\n");
-	fprintf(stdout, "      DROP USER <user>\n");
-	fprintf(stdout, "      SET PASSWORD <password> [FOR <user>]\n");
-	fprintf(stdout, "      GRANT ROLE[S] <role1>,<role2>... TO <user>\n");
-	fprintf(stdout, "      REVOKE ROLE[S] <role1>,<role2>... FROM <user>\n");
-	fprintf(stdout, "      CREATE ROLE <role> PRIVILEGE[S] <priv1[.ns1[.set1]]>,<priv2[.ns2[.set2]]>... WHITELIST addr1,addr2...\n");
-	fprintf(stdout, "          priv: read|read-write|read-write-udf|sys-admin|user-admin|data-admin\n");
-	fprintf(stdout, "          ns:   namespace.  Applies to all namespaces if not set.\n");
-	fprintf(stdout, "          set:  set name.  Applies to all sets within namespace if not set.\n");
-	fprintf(stdout, "                sys-admin, user-admin and data-admin can't be qualified with namespace or set.\n");
-	fprintf(stdout, "          addr: IP address.\n");
-	fprintf(stdout, "      DROP ROLE <role>\n");
-	fprintf(stdout, "      GRANT PRIVILEGE[S] <priv1[.ns1[.set1]]>,<priv2[.ns2[.set2]]>... TO <role>\n");
-	fprintf(stdout, "      REVOKE PRIVILEGE[S] <priv1[.ns1[.set1]]>,<priv2[.ns2[.set2]]>... FROM <role>\n");
-	fprintf(stdout, "      SET WHITELIST addr1,addr2... FOR <role>\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "      \n");
 }
@@ -249,9 +193,9 @@ print_dml_help()
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "      Examples:\n");
 	fprintf(stdout, "      \n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', 123, 'abc')\n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3]}'))\n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', LIST('[1, 2, 3]'), MAP('{\"a\": 1, \"b\": 2}'))\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', 123, 'abc', true)\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3]}'), BOOL(1))\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', LIST('[1, 2, 3]'), MAP('{\"a\": 1, \"b\": 2}'), CAST(0 as BOOL))\n");
 	fprintf(stdout, "          INSERT INTO test.demo (PK, gj) VALUES ('key1', GEOJSON('{\"type\": \"Point\", \"coordinates\": [123.4, -56.7]}'))\n");
 	fprintf(stdout, "          DELETE FROM test.demo WHERE PK = 'key1'\n");
 	fprintf(stdout, "      \n");
@@ -322,7 +266,6 @@ print_query_help()
 	fprintf(stdout, "          <args> is a comma-separated list of argument values for the UDF.\n");
 	fprintf(stdout, "          <ns> is the namespace for the records to be queried.\n");
 	fprintf(stdout, "          <set> is the set name for the record to be queried.\n");
-	fprintf(stdout, "          <key> is the record's primary key.\n");
 	fprintf(stdout, "          <bin> is the name of a bin.\n");
 	fprintf(stdout, "          <value> is the value of a bin.\n");
 	fprintf(stdout, "          <lower> is the lower bound for a numeric range query.\n");
@@ -351,21 +294,10 @@ static void
 print_admin_help()
 {
 	fprintf(stdout, "  INFO\n");
-	fprintf(stdout, "      SHOW NAMESPACES | SETS | BINS | INDEXES\n" );
-	fprintf(stdout, "      (DEPRECATED) SHOW SCANS | QUERIES\n" );
-	fprintf(stdout, "      (DEPRECATED) STAT NAMESPACE <ns> | INDEX <ns> <indexname>\n");
-	fprintf(stdout, "      (DEPRECATED) STAT SYSTEM\n");
-	fprintf(stdout, "      (DEPRECATED) ASINFO <ASInfoCommand>\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "  JOB MANAGEMENT (DEPRECATED)\n");
-	fprintf(stdout, "      KILL_QUERY <transaction_id>\n");
-	fprintf(stdout, "      KILL_SCAN <scan_id>\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "  USER ADMINISTRATION (DEPRECATED)\n");
-	fprintf(stdout, "      SHOW USER [<user>]\n");
-	fprintf(stdout, "      SHOW USERS\n");
-	fprintf(stdout, "      SHOW ROLE <role>\n");
-	fprintf(stdout, "      SHOW ROLES\n");
+	fprintf(stdout, "      SHOW NAMESPACES\n" );
+	fprintf(stdout, "      SHOW SETS\n" );
+	fprintf(stdout, "      SHOW BINS\n" );
+	fprintf(stdout, "      SHOW INDEXES\n" );
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "  MANAGE UDFS\n");
 	fprintf(stdout, "      SHOW MODULES\n");
@@ -380,8 +312,6 @@ print_admin_help()
 	fprintf(stdout, "          DESC MODULE test.lua\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "  RUN <filepath>\n");
-	fprintf(stdout, "      \n");
-	fprintf(stdout, "  SYSTEM <bash command>\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "      \n");
 

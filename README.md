@@ -23,19 +23,8 @@ $ sudo apt-get install libreadline6 libreadline-dev flex
 $ yum -y install readline readline-devel flex which
 ```
 
-### Build the C client
-
-* Clone the C client from GitHub.
-    ```
-    $ git clone https://github.com/aerospike/aerospike-client-c
-    ```
-
+### C client Dependencies
 * Install the prerequisites of the C client, as described in its repo's README.
-* Build the C client, as described in its repo's README.
-* Set the `CLIENTREPO` environment variable to point to the `aerospike-client-c` directory.
-```
-$ export CLIENTREPO=path/to/aerospike-client-c
-```
 
 ## Building AQL
 	$ make clean

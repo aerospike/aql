@@ -52,9 +52,8 @@ typedef enum {
 	INFO_OP,
 	SCAN_OP,
 	RUNFILE_OP,
-	ADMIN_OP,
 	TRUNCATE_OP,
-	OP_MAX = 7
+	OP_MAX = 6
 } atype;
 
 typedef enum {
@@ -67,30 +66,19 @@ typedef enum {
 	ASQL_OP_SELECT,
 	ASQL_OP_AGGREGATE,
 
-	ASQL_OP_CREATE,
-	ASQL_OP_DROP,
-	ASQL_OP_GRANT,
-	ASQL_OP_REVOKE,
 	ASQL_OP_REGISTER,
 	ASQL_OP_REMOVE,
 
 	ASQL_OP_SHOW,
 	ASQL_OP_DESC,
-	ASQL_OP_STAT,
-
-	ASQL_OP_KILL_Q,
-	ASQL_OP_KILL_S,
 
 	ASQL_OP_RUN,
-	ASQL_OP_ASINFO,
 
 	ASQL_OP_SET,
 	ASQL_OP_GET,
 	ASQL_OP_RESET,
-	ASQL_OP_PRINT,
-	ASQL_OP_SYSTEM,
 
-	ASQL_OP_MAX = 25
+	ASQL_OP_MAX
 } asql_optype;
 
 typedef struct asql_base_config {
