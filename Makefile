@@ -4,23 +4,27 @@ CLIENT_PATH = ./modules/c-client
 JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
-DIR_INCLUDE = ../include $(CLIENT_PATH)/src/include
+DIR_INCLUDE = $(CLIENT_PATH)/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
 INCLUDES = $(DIR_INCLUDE:%=-I%) 
 
-CFLAGS = -std=gnu99 -g -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
+CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
 CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
 
 ifeq ($(OS),Darwin)
   CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
-  ifneq ($(wildcard /usr/local/opt/openssl/include),)
-    CFLAGS += -I/usr/local/opt/openssl/include
+  ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
+    # Mac new homebrew openssl include path
+    CC_FLAGS += -I/opt/homebrew/opt/openssl/include
+  else ifneq ($(wildcard /usr/local/opt/openssl/include),)
+    # Mac old homebrew openssl include path
+    CC_FLAGS += -I/usr/local/opt/openssl/include
+  else
+    CFLAGS += -rdynamic
   endif
 
-else
-  CFLAGS += -rdynamic
 endif
 
 ifeq ($(OS),Darwin)
@@ -38,7 +42,18 @@ ifneq ($(OPENSSL_STATIC_PATH),)
   LIBRARIES += $(OPENSSL_STATIC_PATH)/libssl.a
   LIBRARIES += $(OPENSSL_STATIC_PATH)/libcrypto.a
 else
-  LDFLAGS += -L/usr/local/opt/openssl/lib
+  ifeq ($(OS),Darwin)
+    ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
+      # Mac new homebrew openssl lib path
+      LIBRARIES += -L/opt/homebrew/opt/openssl/lib
+    else ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
+      # Mac old homebrew openssl lib path
+      LIBRARIES += -L/usr/local/opt/openssl/lib
+    endif
+  else ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
+    LIBRARIES += -L/usr/local/opt/openssl/lib
+  endif
+
   LIBRARIES += -lssl
   LIBRARIES += -lcrypto
 endif
@@ -77,11 +92,9 @@ else
   endif
 endif
 
-LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline
+LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz
 ifneq ($(OS),Darwin)
   LIBRARIES += -lhistory -lrt -ldl -lz
-else
-  LIBRARIES += -lz
 endif
 
 # Set the AQL version from the latest Git tag.
@@ -120,7 +133,6 @@ OBJECTS += renderer/no_renderer.o
 OBJECTS += renderer/raw_renderer.o
 aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
-	mkdir -p $(TARGET_BIN)/
 
 .PHONY: c-client
 c-client: $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a
