@@ -13,6 +13,20 @@ INCLUDES = $(DIR_INCLUDE:%=-I%)
 CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
 CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
 
+M1_HOME_BREW =
+ifeq ($(OS),Darwin)
+  ifneq ($(wildcard /opt/homebrew),)
+    M1_HOME_BREW = true
+  endif
+endif
+
+# M1 macs brew install openssl under /opt/homebrew/opt/openssl
+# set OPENSSL_PREFIX to the prefix for your openssl if it is installed elsewhere
+OPENSSL_PREFIX ?= /usr/local/opt/openssl
+ifdef M1_HOME_BREW
+  OPENSSL_PREFIX = /opt/homebrew/opt/openssl
+endif
+
 ifeq ($(OS),Darwin)
   CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
   ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
@@ -38,24 +52,26 @@ else
 endif
 
 LIBRARIES += -L/usr/local/lib
-ifneq ($(OPENSSL_STATIC_PATH),)
-  LIBRARIES += $(OPENSSL_STATIC_PATH)/libssl.a
-  LIBRARIES += $(OPENSSL_STATIC_PATH)/libcrypto.a
-else
-  ifeq ($(OS),Darwin)
-    ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
-      # Mac new homebrew openssl lib path
-      LIBRARIES += -L/opt/homebrew/opt/openssl/lib
-    else ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
-      # Mac old homebrew openssl lib path
-      LIBRARIES += -L/usr/local/opt/openssl/lib
-    endif
-  else ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
-    LIBRARIES += -L/usr/local/opt/openssl/lib
-  endif
 
-  LIBRARIES += -lssl
-  LIBRARIES += -lcrypto
+# if this is an m1 mac using homebrew
+# add the new homebrew lib and include path
+# incase dependencies are installed there
+# NOTE: /usr/local/include will be checked first
+ifdef M1_HOME_BREW
+  LDFLAGS += -L/opt/homebrew/lib
+  INCLUDES += -I/opt/homebrew/include
+endif
+
+
+ifeq ($(OPENSSL_STATIC_PATH),)
+  ifeq ($(OS),Darwin)
+    LDFLAGS += -L$(OPENSSL_PREFIX)/lib
+  endif
+  LDFLAGS += -lssl
+  LDFLAGS += -lcrypto
+else
+  LDFLAGS += $(OPENSSL_STATIC_PATH)/libssl.a
+  LDFLAGS += $(OPENSSL_STATIC_PATH)/libcrypto.a
 endif
 
 # Use the Lua submodule?  [By default, yes.]
