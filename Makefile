@@ -29,16 +29,6 @@ endif
 
 ifeq ($(OS),Darwin)
   CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
-  ifneq ($(wildcard /opt/homebrew/opt/openssl/include),)
-    # Mac new homebrew openssl include path
-    CC_FLAGS += -I/opt/homebrew/opt/openssl/include
-  else ifneq ($(wildcard /usr/local/opt/openssl/include),)
-    # Mac old homebrew openssl include path
-    CC_FLAGS += -I/usr/local/opt/openssl/include
-  else
-    CFLAGS += -rdynamic
-  endif
-
 endif
 
 ifeq ($(OS),Darwin)
@@ -58,20 +48,18 @@ LIBRARIES += -L/usr/local/lib
 # incase dependencies are installed there
 # NOTE: /usr/local/include will be checked first
 ifdef M1_HOME_BREW
-  LDFLAGS += -L/opt/homebrew/lib
-  INCLUDES += -I/opt/homebrew/include
+  LIBRARIES += -L/opt/homebrew/lib
+  CC_FLAGS += -I/opt/homebrew/include
 endif
 
 
 ifeq ($(OPENSSL_STATIC_PATH),)
-  ifeq ($(OS),Darwin)
-    LDFLAGS += -L$(OPENSSL_PREFIX)/lib
-  endif
-  LDFLAGS += -lssl
-  LDFLAGS += -lcrypto
+  LIBRARIES += -L$(OPENSSL_PREFIX)/lib
+  LIBRARIES += -lssl
+  LIBRARIES += -lcrypto
 else
-  LDFLAGS += $(OPENSSL_STATIC_PATH)/libssl.a
-  LDFLAGS += $(OPENSSL_STATIC_PATH)/libcrypto.a
+  LIBRARIES += $(OPENSSL_STATIC_PATH)/libssl.a
+  LIBRARIES += $(OPENSSL_STATIC_PATH)/libcrypto.a
 endif
 
 # Use the Lua submodule?  [By default, yes.]
