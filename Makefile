@@ -4,21 +4,17 @@ CLIENT_PATH = ./modules/c-client
 JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
-DIR_INCLUDE = $(CLIENT_PATH)/src/include
-DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
-DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
-DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
-INCLUDES = $(DIR_INCLUDE:%=-I%) 
-
-CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
-CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
-
+# if this is an m1 mac using homebrew
+# add the new homebrew lib and include path
+# incase dependencies are installed there
+# NOTE: /usr/local/include will be checked first
 M1_HOME_BREW =
 ifeq ($(OS),Darwin)
   ifneq ($(wildcard /opt/homebrew),)
     M1_HOME_BREW = true
   endif
 endif
+
 
 # M1 macs brew install openssl under /opt/homebrew/opt/openssl
 # set OPENSSL_PREFIX to the prefix for your openssl if it is installed elsewhere
@@ -28,7 +24,28 @@ ifdef M1_HOME_BREW
 endif
 
 ifeq ($(OS),Darwin)
-  CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
+  CFLAGS += -D_DARWIN_UNLIMITED_SELECT
+endif
+
+DIR_INCLUDE += /usr/local/include
+DIR_INCLUDE += $(CLIENT_PATH)/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
+DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
+
+ifdef M1_HOME_BREW
+  DIR_INCLUDE += -I/opt/homebrew/include
+endif
+
+INCLUDES = $(DIR_INCLUDE:%=-I%) 
+
+CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
+CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
+
+LIBRARIES += -L/usr/local/lib
+
+ifdef M1_HOME_BREW
+  LIBRARIES += -L/opt/homebrew/lib
 endif
 
 ifeq ($(OS),Darwin)
@@ -40,18 +57,6 @@ else
   LIBRARIES += -L$(JANSSON_PATH)/src/.libs -Wl,-l,:libjansson.a
   LIBRARIES += -L$(TOML_PATH) -Wl,-l,:libtoml.a
 endif
-
-LIBRARIES += -L/usr/local/lib
-
-# if this is an m1 mac using homebrew
-# add the new homebrew lib and include path
-# incase dependencies are installed there
-# NOTE: /usr/local/include will be checked first
-ifdef M1_HOME_BREW
-  LIBRARIES += -L/opt/homebrew/lib
-  CC_FLAGS += -I/opt/homebrew/include
-endif
-
 
 ifeq ($(OPENSSL_STATIC_PATH),)
   LIBRARIES += -L$(OPENSSL_PREFIX)/lib
