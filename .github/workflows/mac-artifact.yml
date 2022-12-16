@@ -4,9 +4,9 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready]
+    branches: [actionsHub, master, test-ready, "*-bugfix"]
   pull_request:
-    branches: [actionsHub]
+    branches: [master, test-ready]
   workflow_call:
     inputs:
       submodule:
@@ -82,7 +82,7 @@ jobs:
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
-          make
+          make OPENSSL_STATIC_PATH=/usr/local/opt/openssl/lib
       - name: Sanity Test tools
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |

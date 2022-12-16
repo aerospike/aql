@@ -4,23 +4,48 @@ CLIENT_PATH = ./modules/c-client
 JANSSON_PATH = ./modules/jansson
 TOML_PATH = ./toml
 
-DIR_INCLUDE = ../include $(CLIENT_PATH)/src/include
+# if this is an m1 mac using homebrew
+# add the new homebrew lib and include path
+# incase dependencies are installed there
+# NOTE: /usr/local/include will be checked first
+M1_HOME_BREW =
+ifeq ($(OS),Darwin)
+  ifneq ($(wildcard /opt/homebrew),)
+    M1_HOME_BREW = true
+  endif
+endif
+
+
+# M1 macs brew install openssl under /opt/homebrew/opt/openssl
+# set OPENSSL_PREFIX to the prefix for your openssl if it is installed elsewhere
+OPENSSL_PREFIX ?= /usr/local/opt/openssl
+ifdef M1_HOME_BREW
+  OPENSSL_PREFIX = /opt/homebrew/opt/openssl
+endif
+
+ifeq ($(OS),Darwin)
+  CFLAGS += -D_DARWIN_UNLIMITED_SELECT
+endif
+
+DIR_INCLUDE += /usr/local/include
+DIR_INCLUDE += $(CLIENT_PATH)/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/common/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/mod-lua/src/include
 DIR_INCLUDE += $(CLIENT_PATH)/modules/base/src/include
+
+ifdef M1_HOME_BREW
+  DIR_INCLUDE += -I/opt/homebrew/include
+endif
+
 INCLUDES = $(DIR_INCLUDE:%=-I%) 
 
-CFLAGS = -std=gnu99 -g -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
+CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
 CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
 
-ifeq ($(OS),Darwin)
-  CFLAGS += -I/usr/local/include -D_DARWIN_UNLIMITED_SELECT
-  ifneq ($(wildcard /usr/local/opt/openssl/include),)
-    CFLAGS += -I/usr/local/opt/openssl/include
-  endif
+LIBRARIES += -L/usr/local/lib
 
-else
-  CFLAGS += -rdynamic
+ifdef M1_HOME_BREW
+  LIBRARIES += -L/opt/homebrew/lib
 endif
 
 ifeq ($(OS),Darwin)
@@ -33,14 +58,13 @@ else
   LIBRARIES += -L$(TOML_PATH) -Wl,-l,:libtoml.a
 endif
 
-LIBRARIES += -L/usr/local/lib
-ifneq ($(OPENSSL_STATIC_PATH),)
-  LIBRARIES += $(OPENSSL_STATIC_PATH)/libssl.a
-  LIBRARIES += $(OPENSSL_STATIC_PATH)/libcrypto.a
-else
-  LDFLAGS += -L/usr/local/opt/openssl/lib
+ifeq ($(OPENSSL_STATIC_PATH),)
+  LIBRARIES += -L$(OPENSSL_PREFIX)/lib
   LIBRARIES += -lssl
   LIBRARIES += -lcrypto
+else
+  LIBRARIES += $(OPENSSL_STATIC_PATH)/libssl.a
+  LIBRARIES += $(OPENSSL_STATIC_PATH)/libcrypto.a
 endif
 
 # Use the Lua submodule?  [By default, yes.]
@@ -77,11 +101,9 @@ else
   endif
 endif
 
-LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline
+LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz
 ifneq ($(OS),Darwin)
   LIBRARIES += -lhistory -lrt -ldl -lz
-else
-  LIBRARIES += -lz
 endif
 
 # Set the AQL version from the latest Git tag.
@@ -120,7 +142,6 @@ OBJECTS += renderer/no_renderer.o
 OBJECTS += renderer/raw_renderer.o
 aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
-	mkdir -p $(TARGET_BIN)/
 
 .PHONY: c-client
 c-client: $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a
