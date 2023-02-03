@@ -348,6 +348,8 @@ query_execute(asql_config* c, sk_config* s)
 	as_policy_write write_policy;
 	as_policy_write_init(&write_policy);
 	write_policy.base.total_timeout = c->base.timeout_ms;
+	write_policy.durable_delete = c->durable_delete;
+
 	if (c->base.socket_timeout_ms > -1) {
 		// set if non-default value
 		write_policy.base.socket_timeout = c->base.socket_timeout_ms;
