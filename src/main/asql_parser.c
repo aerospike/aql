@@ -1353,15 +1353,16 @@ static aconfig *parse_query(tokenizer *tknzr, int type)
 		return NULL;
 	}
 
+	s->limit = limit;
+
 	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
 	// limit could have been set by previous attempts to parse hence the NULL check. 
 	// This is not the documented way of setting the limit but still possible.
-	if (limit == NULL && !parse_limit(tknzr, &limit)) {
+	if (s->limit == NULL && !parse_limit(tknzr, &s->limit))
+	{
 		goto ERROR;
 	}
-	
-	s->limit = limit;
 
 	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 

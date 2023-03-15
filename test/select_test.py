@@ -131,17 +131,29 @@ class SelectPositiveTest(unittest.TestCase):
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), "9 rows in set")
 
-    def test_select_where_limit(self):
+    @parameterized.expand(
+        [
+            (
+                "select * from test.{} where int = 0 limit 9".format(set_name),
+                "9 rows in set",
+            ),
+            (
+                "select * from test.{} limit 9 where int = 0 ".format(set_name),
+                "9 rows in set",
+            ),
+        ]
+    )
+    def test_select_where_limit(self, cmd, check_str):
         output = run_aql(
             [
                 "-h",
                 self.ips[0],
                 "-c",
-                "select * from test.{} where int = 0 limit 9".format(set_name),
+                cmd,
             ]
         )
         self.assertEqual(output.returncode, 0)
-        self.assertRegex(str(output.stdout), "9 rows in set")
+        self.assertRegex(str(output.stdout), check_str)
 
     @parameterized.expand(
         [
