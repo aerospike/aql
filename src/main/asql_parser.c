@@ -1168,9 +1168,31 @@ parse_error:
 	return -1;
 }
 
+static bool
+parse_limit(tokenizer *tknzr, asql_value **value) 
+{
+	if (strcasecmp(tknzr->tok, "LIMIT")) {
+		return false;
+	}
 
-static aconfig*
-parse_query(tokenizer* tknzr, int type)
+	GET_NEXT_TOKEN_OR_RETURN(false);
+	
+	*value = malloc(sizeof(asql_value));
+
+	if (parse_expression(tknzr, *value)) {
+		asql_free_value(*value);
+		*value = NULL;
+		return false;
+	}
+
+	if ((*value)->type != AS_INTEGER) {
+		return false;
+	}
+
+	return true;
+}
+
+static aconfig *parse_query(tokenizer *tknzr, int type)
 {
 	asql_name ns = NULL;
 	asql_name set = NULL;
@@ -1180,6 +1202,7 @@ parse_query(tokenizer* tknzr, int type)
 	asql_name ibname = NULL;
 	as_vector* bnames = NULL;
 	as_vector* params = NULL;
+	asql_value* limit = NULL;
 
 	if (type == ASQL_OP_SELECT) {
 		GET_NEXT_TOKEN_OR_GOTO(ERROR)
@@ -1237,6 +1260,11 @@ parse_query(tokenizer* tknzr, int type)
 		get_next_token(tknzr);
 
 	// SCAN Operations
+	if (tknzr->tok && !strcasecmp(tknzr->tok, "LIMIT") && !parse_limit(tknzr, &limit))
+		goto ERROR;
+	if (limit)
+		get_next_token(tknzr);
+
 	if (!tknzr->tok) {
 		scan_config* s = malloc(sizeof(scan_config));
 		bzero(s, sizeof(scan_config));
@@ -1252,6 +1280,7 @@ parse_query(tokenizer* tknzr, int type)
 			s->u.udfname = udfname;
 			s->u.params = params;
 		}
+		s->limit = limit;
 		return (aconfig*)s;
 	}
 
@@ -1326,8 +1355,18 @@ parse_query(tokenizer* tknzr, int type)
 
 	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
+	// limit could have been set by previous attempts to parse hence the NULL check. 
+	// This is not the documented way of setting the limit but still possible.
+	if (limit == NULL && !parse_limit(tknzr, &limit)) {
+		goto ERROR;
+	}
+	
+	s->limit = limit;
+
+	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
+
 ERROR:
-	if (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or")) {
+	if (tknzr->tok && (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or"))) {
 		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->tok);
 		fprintf(stderr, "Only a single predicate is supported.\n");
 	} else {
@@ -1350,6 +1389,9 @@ ERROR:
 		destroy_vector(params, false);
 		as_vector_destroy(params);
 	}
+
+	asql_free_value(limit);
+
 	return NULL;
 }
 

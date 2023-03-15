@@ -315,6 +315,10 @@ query_select(asql_config* c, sk_config* s)
 		populate_where(&query, s, &err);
 	}
 
+	if (s->limit) {
+		query.max_records = s->limit->u.i64;
+	}
+
 	// For each record obtained from the query, invoke the callback function in renderer
 	void* rview = g_renderer->view_new(CLUSTER);
 

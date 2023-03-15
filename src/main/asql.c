@@ -419,6 +419,9 @@ destroy_skconfig(aconfig* ac)
 	destroy_select_param(&s->s);
 	destroy_udf_param(&s->u);
 	destroy_where(&s->where);
+
+	asql_free_value(s->limit);
+
 	free(s);
 }
 
@@ -442,6 +445,7 @@ destroy_scanconfig(aconfig* ac)
 
 	destroy_select_param(&s->s);
 	destroy_udf_param(&s->u);
+	asql_free_value(s->limit);
 	free(s);
 }
 

@@ -59,7 +59,14 @@ void
 predicting_parse_error(tokenizer* tknzr)
 {
 	if (!tknzr->tok) {
-		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->ocmd);
+		// Get last token
+		as_sql_lexer(tknzr->ocmd, &tknzr->tok);
+		char* tok = tknzr->tok;
+		while (!as_sql_lexer(0, &tknzr->tok)) {
+			tok = tknzr->tok;
+		}
+
+		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tok);
 		fprintf(stderr, "Make sure string values are enclosed in quotes.\n");
 		fprintf(stderr, "Type \" aql --help \" from console or simply \"help\" from within the aql-prompt. \n\n");
 	}

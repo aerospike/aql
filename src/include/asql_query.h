@@ -56,6 +56,8 @@ typedef struct sk_config {
 	asql_name itype;
 
 	asql_where where;
+
+	asql_value* limit;
 } sk_config;
 
 //=========================================================

@@ -37,6 +37,8 @@ typedef struct scan_config {
 
 	select_param s;
 	udf_param u;
+
+	asql_value* limit;
 } scan_config;
 
 
