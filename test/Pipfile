@@ -4,11 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+aerospike = "*"
 parameterized = "*"
 pytest = "*"
 docker = "*"
 
 [dev-packages]
+black = "*"
 
 [requires]
 python_version = "3.10"
