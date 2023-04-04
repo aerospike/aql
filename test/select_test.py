@@ -1,132 +1,47 @@
+
 import sys
 import time
 import unittest
-import subprocess
-import docker
-import aerospike
 from parameterized import parameterized
+import utils
 
 as_client = None
-set_name = "aql-tests"
-
-
-def run_containers(count: int, config_file: str = None):
-    client = docker.from_env()
-    aerolab_cmd = [
-        "aerolab",
-        "cluster",
-        "create",
-        # "-F=--network={}".format(aql_net),
-        "-n",
-        set_name,
-        "-c",
-        str(count),
-        "-v=6.2.0.3",
-    ]
-
-    if config_file:
-        aerolab_cmd.append("--customconf={}".format(config_file))
-
-    subprocess.run(aerolab_cmd)
-
-    containers = client.containers.list()
-    ips = []
-
-    for c in containers:
-        if "aerolab-aql" not in c.attrs["Name"]:
-            continue
-
-        nets = c.attrs["NetworkSettings"]["Networks"].values()
-
-        for net in nets:
-            if "IPAddress" in net:
-                ips.append(net["IPAddress"])
-                break
-
-    time.sleep(3)  # TODO: Add mechanism to wait until containers can be connected to
-    return ips
-
-
-def shutdown_containers():
-    aerolab_cmd = ["aerolab", "cluster", "destroy", "-n", set_name, "-f"]
-    subprocess.run(aerolab_cmd)
-    client = docker.from_env()
-    client.networks.prune()
-
-
-def run_aql(args=None) -> subprocess.CompletedProcess:
-    cmd = ["target/Darwin-x86_64/bin/aql"]  # TODO: Do something platform independent
-    args = [] if args is None else args
-    cmd.extend(args)
-    return subprocess.run(cmd, capture_output=True)
-
-
-def create_client(seed: tuple[str, int] = ("127.0.0.1", 3000)):
-    global as_client
-    config = {"hosts": [seed], "timeout": 3000}
-    as_client = aerospike.client(config)
-    print("Successfully connected to seed", seed)
-
-
-def populate_db():
-    global as_client
-    write_policy = {"key": aerospike.POLICY_KEY_SEND}
-    keys = []
-
-    for idx in range(100):
-        key = ("test", set_name, "key" + str(idx))
-        bins = {
-            "str": str(idx),
-            "int": idx % 5,
-            "float": idx * 3.14,
-        }
-        keys.append(key)
-        as_client.put(key, bins, policy=write_policy)
-
-    print("Successfully populated DB")
-
-
-def create_sindex(name, type_, ns, set, bin):
-    as_client.info_all(
-        "sindex-create:ns={};set={};indexname={};indexdata={},{}".format(
-            ns, set, name, bin, type_
-        )
-    )
-    time.sleep(3)  # TODO: Instead of sleep wait for sindex to exist
-    print("Successfully created secondary index", name)
-
 
 class SelectPositiveTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.addClassCleanup(shutdown_containers)
-        cls.ips = run_containers(1)
-        create_client((cls.ips[0], 3000))
-        populate_db()
-        create_sindex("int-index", "numeric", "test", set_name, "int")
+        cls.ips = utils.run_containers(utils.SET_NAME, 1, version=utils.AEROSPIKE_VERSION)
+        cls.addClassCleanup(lambda: utils.shutdown_containers(utils.SET_NAME))
+        utils.create_client((cls.ips[0], 3000))
+        utils.populate_db(utils.SET_NAME)
+        utils.create_sindex("a-str-index", "string", "test", utils.SET_NAME, "a-str")
+        utils.create_sindex("b-str-index", "string", "test", utils.SET_NAME, "b-str")
+        utils.create_sindex("a-int-index", "numeric", "test", utils.SET_NAME, "a-int")
+        utils.create_sindex("b-int-index", "numeric", "test", utils.SET_NAME, "b-int")
+        # time.sleep(10000)
 
     def test_select(self):
-        output = run_aql(
-            ["-h", self.ips[0], "-c", "select * from test.{}".format(set_name)]
+        output = utils.run_aql(
+            ["-h", self.ips[0], "-c", "select * from test.{}".format(utils.SET_NAME)]
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), "100 rows in set")
 
     def test_select_where(self):
-        output = run_aql(
+        output = utils.run_aql(
             [
                 "-h",
                 self.ips[0],
                 "-c",
-                "select * from test.{} where int = 0".format(set_name),
+                "select * from test.{} where a-int = 0".format(utils.SET_NAME),
             ]
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), "20 rows in set")
 
     def test_select_limit(self):
-        output = run_aql(
-            ["-h", self.ips[0], "-c", "select * from test.{} limit 9".format(set_name)]
+        output = utils.run_aql(
+            ["-h", self.ips[0], "-c", "select * from test.{} limit 9".format(utils.SET_NAME)]
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), "9 rows in set")
@@ -134,17 +49,17 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test.{} where int = 0 limit 9".format(set_name),
+                "select * from test.{} where a-int = 0 limit 9".format(utils.SET_NAME),
                 "9 rows in set",
             ),
             (
-                "select * from test.{} limit 9 where int = 0 ".format(set_name),
+                "select * from test.{} limit 9 where a-int = 0 ".format(utils.SET_NAME),
                 "9 rows in set",
             ),
         ]
     )
     def test_select_where_limit(self, cmd, check_str):
-        output = run_aql(
+        output = utils.run_aql(
             [
                 "-h",
                 self.ips[0],
@@ -154,6 +69,177 @@ class SelectPositiveTest(unittest.TestCase):
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), check_str)
+
+    @parameterized.expand(
+        [
+            (
+                "select * from test.{} where a-int = 0 and int = 0".format(utils.SET_NAME),
+                "20 rows in set",
+            ),
+            (
+                "select * from test.{} where int = 0 and a-int = 0".format(utils.SET_NAME),
+                "20 rows in set",
+            ),
+            (
+                "select * from test.{} where a-int = 0 and b-int = 5".format(utils.SET_NAME),
+                "10 rows in set",
+            ),
+            (
+                'select * from test.{} where b-str = "0" and a-str = "5"'.format(
+                    utils.SET_NAME
+                ),
+                "10 rows in set",
+            ),
+            (
+                'select * from test.{} where b-str = "0" and b-int = 5'.format(
+                    utils.SET_NAME
+                ),
+                "10 rows in set",
+            ),
+            (
+                'select * from test.{} where b-int = 5 and b-str = "5"'.format(
+                    utils.SET_NAME
+                ),
+                "0 rows in set",
+            ),
+        ]
+    )
+    def test_select_double_where_table(self, cmd, check_str):
+        output = utils.run_aql(
+            [
+                "-h",
+                self.ips[0],
+                "-c",
+                cmd,
+            ]
+        )
+        self.assertEqual(output.returncode, 0)
+        self.assertRegex(str(output.stdout), check_str)
+        
+    @parameterized.expand(
+        [
+            (
+                "set output json; select * from test.{} where a-int = 0 and int = 0".format(utils.SET_NAME),
+                20,
+                ("a-int", 0),
+                ("int", 0)
+            ),
+            (
+                "set output json; select * from test.{} where int = 0 and a-int = 0".format(utils.SET_NAME),
+                20,
+                ("a-int", 0),
+                ("int", 0)
+            ),
+            (
+                "set output json; select * from test.{} where a-int = 0 and b-int = 5".format(utils.SET_NAME),
+                10,
+                ("a-int", 0),
+                ("b-int", 5)
+            ),
+            (
+                'set output json; select * from test.{} where b-str = "0" and a-str = "5"'.format(
+                    utils.SET_NAME
+                ),
+                10,
+                ("b-str", "0"),
+                ("a-str", "5")
+            ),
+            (
+                'set output json; select * from test.{} where b-str = "0" and b-int = 5'.format(
+                    utils.SET_NAME
+                ),
+                10,
+                ("b-str", "0"),
+                ("b-int", 5)
+            ),
+        ]
+    )
+    def test_select_double_where_json(self, cmd, row_count, col_1_val, col_2_val):
+        output = utils.run_aql(
+            [
+                "-h",
+                self.ips[0],
+                "-c",
+                cmd,
+            ]
+        )
+        self.assertEqual(output.returncode, 0)
+        json_out = utils.parse_json_output(output.stdout)
+        print(json_out)
+
+        rows = json_out[0]
+        status = json_out[1]
+
+        self.assertEqual(len(rows), row_count)
+
+        for row in rows[:-1]:
+            val1 = row[col_1_val[0]]
+            val2 = row[col_2_val[0]]
+            self.assertEqual(val1, col_1_val[1])
+            self.assertEqual(val2, col_2_val[1])
+
+        self.assertEqual(status[0]["Status"], 0)
+
+    @parameterized.expand(
+        [
+            (
+                "select * from test.{} where a-int = 0 and int = 0 limit 10".format(
+                    utils.SET_NAME
+                ),
+                "10 rows in set",
+            ),
+            (
+                "select * from test.{} where int = 0 and a-int = 0 limit 5".format(
+                    utils.SET_NAME
+                ),
+                "5 rows in set",
+            ),
+            (
+                "select * from test.{} where a-int = 0 and b-int = 5 limit 2".format(
+                    utils.SET_NAME
+                ),
+                "2 rows in set",
+            ),
+            (
+                'select * from test.{} where b-str = "0" and a-str = "5" limit 7'.format(
+                    utils.SET_NAME
+                ),
+                "7 rows in set",
+            ),
+            (
+                'select * from test.{} where b-str = "0" and b-int = 5 limit 7'.format(
+                    utils.SET_NAME
+                ),
+                "7 rows in set",
+            ),
+            (
+                'select * from test.{} where b-int = 5 and b-str = "5" limit 0'.format(
+                    utils.SET_NAME
+                ),
+                "0 rows in set",
+            ),
+        ]
+    )
+    def test_select_double_where_limit(self, cmd, check_str):
+        output = utils.run_aql(
+            [
+                "-h",
+                self.ips[0],
+                "-c",
+                cmd,
+            ]
+        )
+        self.assertEqual(output.returncode, 0)
+        self.assertRegex(str(output.stdout), check_str)
+
+
+class SelectNegativeTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.ips = utils.run_containers(utils.SET_NAME, 1, version=utils.AEROSPIKE_VERSION)
+        cls.addClassCleanup(lambda: utils.shutdown_containers(utils.SET_NAME))
+        utils.create_client((cls.ips[0], 3000))
+        utils.create_sindex("b-int-index", "numeric", "test", utils.SET_NAME, "b")
 
     @parameterized.expand(
         [
@@ -172,10 +258,34 @@ class SelectPositiveTest(unittest.TestCase):
                 "select * from test.testset where a = 5 limit true",
                 "Unsupported command format with token -  'true'",
             ),
+            (
+                "select * from test.testset where a between 1 and 2 and b = 3",
+                "Double where clause only supports '=' expressions.",
+            ),
+            (
+                "select * from test.testset where b = 3 and a between 1 and 2",
+                "Double where clause only supports '=' expressions.",
+            ),
+            (
+                "select * from test.testset in list  where b = 3 and a = 3",
+                '"IN <indextype>" not supported with double where clause.',
+            ),
+            (
+                "select * from test.testset where b = 3 and a = 3",
+                "Error: at least one bin needs a secondary index defined",
+            ),
+            (
+                "select * from test.testset where b = 3 and a = 3",
+                "Error: at least one bin needs a secondary index defined",
+            ),
+            (
+                "select * from test.{} where b = 3 and a = 3.3".format(utils.SET_NAME),
+                "Error: Equality match is only available for int and string bins",
+            ),
         ]
     )
     def test_select_syntax_error(self, cmd, assert_str):
-        output = run_aql(["-h", self.ips[0], "-c", cmd])
+        output = utils.run_aql(["-h", self.ips[0], "-c", cmd])
         self.assertEqual(output.returncode, 0)
         print(str(output.stderr))
         self.assertTrue(assert_str in output.stderr.decode(sys.stdout.encoding))

@@ -21,46 +21,20 @@
 // Includes.
 //
 
-#include <stdio.h>
-
-#include <sql-lexer.h>
-
+#include <aerospike/as_error.h>
+#include <aerospike/as_node.h>
 
 //==========================================================
 // Typedefs & Constants.
 //
 
-typedef struct tokenizer
-{
-  char* tok;
-  char* ocmd;
-} tokenizer;
-
 
 //=========================================================
-// Inlines and Macros.
-//
-
-static inline void
-get_next_token (tokenizer* tknzr)
-{
-	as_sql_lexer(0, &tknzr->tok, false);
-}
-
-static inline char*
-peek_next_token(tokenizer *tknzr)
-{
-  char* peek;
-  as_sql_lexer(0, &peek, true);
-  return peek;
-}
-
-//==========================================================
 // Public API.
 //
 
-void init_tokenizer (tokenizer* tknzr, char* cmd);
-void destroy_tokenizer (tokenizer* tknzr);
-void predicting_parse_error (tokenizer* tknzr);
-
-
+bool bins_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
+bool udf_get_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
+bool list_udf_parser(as_vector* result, const as_node *node, const char *req, const char *res);
+bool list_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
+char* info_res_split(const char* res);

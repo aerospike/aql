@@ -94,7 +94,7 @@ jobs:
         with:
           cond: ${{ runner.arch == 'X64' }}
           if_true: x86_64
-          if_false: aarch64 # TODO review this when adding m1 support.
+          if_false: aarch64
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:

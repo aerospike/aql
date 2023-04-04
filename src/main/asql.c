@@ -148,6 +148,13 @@ destroy_aconfig(aconfig* ac)
 	}
 	return 0;
 }
+
+void
+destroy_asqlconfig(asql_config* ac)
+{
+	if (ac->base.password) free(ac->base.password);
+	if (ac->base.tls.keyfile_pw) free(ac->base.tls.keyfile_pw);
+}
 	
 
 int
@@ -382,6 +389,10 @@ destroy_udf_param(udf_param* u)
 static void
 destroy_where(asql_where* w)
 {
+	if (w == NULL) {
+		return;
+	}
+	
 	if (w->qtype == ASQL_QUERY_TYPE_EQUALITY) {
 		asql_free_value(&w->beg);
 	}
@@ -389,6 +400,8 @@ destroy_where(asql_where* w)
 		asql_free_value(&w->beg);
 		asql_free_value(&w->end);
 	}
+
+	free(w->ibname);
 }
 
 static void
@@ -413,14 +426,13 @@ destroy_skconfig(aconfig* ac)
 
 	if (s->ns) free(s->ns);
 	if (s->set) free(s->set);
-	if (s->ibname) free(s->ibname);
 	if (s->itype) free(s->itype);
 
 	destroy_select_param(&s->s);
 	destroy_udf_param(&s->u);
 	destroy_where(&s->where);
-
-	asql_free_value(s->limit);
+	destroy_where(s->where2);
+	free(s->limit);
 
 	free(s);
 }
@@ -445,7 +457,7 @@ destroy_scanconfig(aconfig* ac)
 
 	destroy_select_param(&s->s);
 	destroy_udf_param(&s->u);
-	asql_free_value(s->limit);
+	free(s->limit);
 	free(s);
 }
 

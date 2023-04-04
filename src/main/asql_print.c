@@ -87,8 +87,6 @@ print_version()
 {
 	fprintf(stdout, "Aerospike Query Client\n");
 	fprintf(stdout, "Version %s\n", AQL_VERSION);
-	fprintf(stderr, "C Client Version %s\n", aerospike_client_version);
-	fprintf(stdout, "Copyright 2012-2022 Aerospike. All rights reserved.\n");
 }
 
 void
@@ -229,31 +227,35 @@ print_query_help()
 {
 	fprintf(stdout, "  QUERY\n");
 	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>]\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] WHERE <bin> = <value>\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] WHERE <bin> BETWEEN <lower> AND <upper>\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] [limit <max-records>]\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] WHERE <bin> = <value> [and <bin2> = <value>] [limit <max-records>]\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] WHERE <bin> BETWEEN <lower> AND <upper> [limit <max-records>]\n");
 	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] WHERE PK = <key>\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <indextype> WHERE <bin> = <value>\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <indextype> WHERE <bin> BETWEEN <lower> AND <upper>\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <indextype> WHERE <bin> CONTAINS <GeoJSONPoint>\n");
-	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <indextype> WHERE <bin> WITHIN <GeoJSONPolygon>\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <index-type> WHERE <bin> = <value>\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <index-type> WHERE <bin> BETWEEN <lower> AND <upper>\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <index-type> WHERE <bin> CONTAINS <GeoJSONPoint>\n");
+	fprintf(stdout, "      SELECT <bins> FROM <ns>[.<set>] IN <index-type> WHERE <bin> WITHIN <GeoJSONPolygon>\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "          <ns> is the namespace for the records to be queried.\n");
 	fprintf(stdout, "          <set> is the set name for the record to be queried.\n");
 	fprintf(stdout, "          <key> is the record's primary key.\n");
-	fprintf(stdout, "          <bin> is the name of a bin.\n");
-	fprintf(stdout, "          <value> is the value of a bin.\n");
-	fprintf(stdout, "          <indextype> is the type of a index user wants to query. (LIST/MAPKEYS/MAPVALUES)\n");
+	fprintf(stdout, "          <bin> is the name of a bin. At least one bin must have an sindex defined.\n");
+	fprintf(stdout, "          <bin2> is the name of a bin. At least one bin must have an sindex defined.\n");
+	fprintf(stdout, "          <value> is the value of a bin. May be a \"string\" or an int.\n");
+	fprintf(stdout, "          <index-type> is the type of a index user wants to query. (LIST/MAPKEYS/MAPVALUES)\n");
 	fprintf(stdout, "          <bins> can be either a wildcard (*) or a comma-separated list of bin names.\n");
 	fprintf(stdout, "          <lower> is the lower bound for a numeric range query.\n");
 	fprintf(stdout, "          <upper> is the lower bound for a numeric range query.\n");
+	fprintf(stdout, "          <max-records> is the total number of records to be rendered.\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "      Examples:\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "          SELECT * FROM test.demo\n");
 	fprintf(stdout, "          SELECT * FROM test.demo WHERE PK = 'key1'\n");
 	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE PK = 'key1'\n");
-	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE foo = 123\n");
-	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE foo BETWEEN 0 AND 999\n");
+	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE foo = 123 limit 10\n");
+	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE foo = 123 and bar = \"abc\" limit 10\n");
+	fprintf(stdout, "          SELECT foo, bar FROM test.demo WHERE foo BETWEEN 0 AND 999 limit 20\n");
 	fprintf(stdout, "          SELECT * FROM test.demo WHERE gj CONTAINS CAST('{\"type\": \"Point\", \"coordinates\": [0.0, 0.0]}' AS GEOJSON)\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "  AGGREGATION\n");

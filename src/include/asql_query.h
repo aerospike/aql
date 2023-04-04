@@ -40,6 +40,7 @@ typedef struct {
 	asql_query_type_t qtype; // Geospatial query type
 	asql_value beg;  // NUMERIC Range Lookup
 	asql_value end;
+	asql_name ibname; //Lookup w/ IndexedBinName (e.g. WHERE ibn = 4)
 } asql_where;
 
 typedef struct sk_config {
@@ -52,10 +53,10 @@ typedef struct sk_config {
 	select_param s;
 	udf_param u;
 
-	asql_name ibname; // Lookup w/ IndexedBinName (e.g. WHERE ibn = 4)
 	asql_name itype;
 
 	asql_where where;
+	asql_where* where2;
 
 	asql_value* limit;
 } sk_config;

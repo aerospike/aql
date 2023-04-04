@@ -63,7 +63,7 @@ static bool parse_ns_and_set(tokenizer* tknzr, char** ns, char** set);
 static bool parse_name_list(tokenizer* tknzr, as_vector* v, bool allow_empty);
 static bool parse_pkey(tokenizer* tknzr, asql_value* value);
 static bool parse_naked_name_list(tokenizer* tknzr, as_vector* v);
-static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname);
+static bool parse_skey(tokenizer *tknzr, asql_where *where, asql_where **where2);
 static bool parse_in(tokenizer* tknzr, asql_name* itype);
 static char* parse_module(tokenizer* tknzr, bool filename_only);
 static char* parse_module_pathname(tokenizer* tknzr);
@@ -919,10 +919,10 @@ parse_pkey(tokenizer* tknzr, asql_value* value)
 }
 
 static bool
-parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
+parse_skey(tokenizer *tknzr, asql_where *where, asql_where **where2)
 {
 	// SECONDARY INDEX QUERY
-	if (!parse_name(tknzr->tok, ibname, false)) {
+	if (!parse_name(tknzr->tok, &where->ibname, false)) {
 		return false;
 	}
 
@@ -932,10 +932,47 @@ parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
 		if (parse_expression(tknzr, &where->beg) != 0) {
 			return false;
 		}
+
 		where->end = where->beg;
-		where->qtype = ASQL_QUERY_TYPE_EQUALITY;
-	}
-	else if (!strcasecmp(tknzr->tok, "BETWEEN")) { // Range Lookup
+		where->qtype = ASQL_QUERY_TYPE_EQUALITY;		
+
+		char* peek = peek_next_token(tknzr);
+		if (peek != NULL && !strcasecmp(peek, "LIMIT")) {
+			free(peek);
+			return true;
+		}
+		free(peek);
+
+		GET_NEXT_TOKEN_OR_RETURN(true);
+		if (strcasecmp(tknzr->tok, "and"))
+		{
+			return false;
+		}
+
+		*where2 = malloc(sizeof(asql_where));
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (!parse_name(tknzr->tok, &(*where2)->ibname, false))
+		{
+			return false;
+		}
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (strcmp(tknzr->tok, "="))
+		{
+			return false;
+		}
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (parse_expression(tknzr, &(*where2)->beg) != 0)
+		{
+			return false;
+		}
+
+		(*where2)->end = (*where2)->beg;
+		(*where2)->qtype = ASQL_QUERY_TYPE_EQUALITY;
+
+	} else if (!strcasecmp(tknzr->tok, "BETWEEN")) { // Range Lookup
 		GET_NEXT_TOKEN_OR_GOTO(filter_error)
 		if (parse_expression(tknzr, &where->beg) != 0) {
 			return false;
@@ -980,6 +1017,13 @@ parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
 	else {
 		return false;
 	}
+
+	char* peek = peek_next_token(tknzr);
+	if (peek != NULL && !strcasecmp(peek, "and")) {
+		free(peek);
+		return false;
+	}
+	free(peek);
 
 	return true;
 
@@ -1347,10 +1391,21 @@ static aconfig *parse_query(tokenizer *tknzr, int type)
 	}
 	s->itype = itype;
 
-	if (!parse_skey(tknzr, &s->where, &s->ibname)) {
-		destroy_aconfig((aconfig*)s);
-		predicting_parse_error(tknzr);
+	if (!parse_skey(tknzr, &s->where, &s->where2)) {
+		get_next_token(tknzr);
+		if (tknzr->tok && ((!strcasecmp(tknzr->tok, "and") && s->where.qtype != ASQL_QUERY_TYPE_NONE) || s->where2 != NULL)) {
+			fprintf(stderr, "Unsupported command format\n");
+			fprintf(stderr, "Double where clause only supports '=' expressions.\n");
+		} else {
+			predicting_parse_error(tknzr);
+			destroy_aconfig((aconfig*)s);
+		}
 		return NULL;
+	}
+
+	if ((s->itype && s->where2)) {
+		fprintf(stderr, "Unsupported command format\n");
+		fprintf(stderr, "\"IN <indextype>\" not supported with double where clause.\n");	
 	}
 
 	s->limit = limit;
@@ -1361,18 +1416,15 @@ static aconfig *parse_query(tokenizer *tknzr, int type)
 	// This is not the documented way of setting the limit but still possible.
 	if (s->limit == NULL && !parse_limit(tknzr, &s->limit))
 	{
-		goto ERROR;
+		predicting_parse_error(tknzr);
+		destroy_aconfig((aconfig*)s);
+		return NULL;
 	}
 
 	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
 ERROR:
-	if (tknzr->tok && (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or"))) {
-		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->tok);
-		fprintf(stderr, "Only a single predicate is supported.\n");
-	} else {
-		predicting_parse_error(tknzr);
-	}
+	predicting_parse_error(tknzr);
 
 	if (ns) free(ns);
 	if (set) free(set);

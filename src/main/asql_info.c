@@ -38,6 +38,7 @@
 
 #include <asql.h>
 #include <asql_info.h>
+#include <asql_info_parser.h>
 
 #include "renderer/table.h"
 
@@ -48,18 +49,14 @@
 
 struct info_obj_s;
 
-typedef bool (*res_parser)(struct info_obj_s* iobj, const as_error* err, const as_node* node, const char* req, const char* res);
+typedef void (*parser_callback)(void *udata, const as_node *node, const char *req, char *res);
 
-typedef struct {
-	uint32_t code;
-	char message[1024];
-} parser_error;
 
 typedef struct info_obj_s {
-	res_parser parse_fn;
-	parser_error error;
-	void* udata;
+	parser_callback callback;
+	as_error error;
 	void* rview;
+	void* udata;
 } info_obj;
 
 
@@ -70,26 +67,25 @@ typedef struct info_obj_s {
 
 static int udfput(asql_config* c, info_config* ic);
 static int udfremove(asql_config* c, info_config* ic);
-static int info_generic(asql_config* c, info_config* ic, const char* success, res_parser parse_fn, void* udata);
+static int info_generic(asql_config *c, info_config *ic, info_obj *iobj);
 
-static info_obj* new_obj(res_parser parse_fn, void* udata);
+static info_obj *new_obj(parser_callback callback, void *udata);
 static void free_obj(info_obj* iobj);
-static bool value_parser(as_hashmap* map, const char* req, const as_val* name, const char* value);
-static bool pair_parser(as_hashmap* map, const char* req, const char* pair);
+static int display_obj(info_obj *iobj, const char *success);
 static bool generic_cb(const as_error* err, const as_node* node, const char* req, char* res, void* udata);
-static bool parse_response(info_obj* iobj, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool bins_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool udf_get_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool list_res_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-static bool list_udf_parser(info_obj* parser, const as_error* err, const as_node* node, const char* req, const char* res);
-
+static bool render_response(info_obj* iobj, const as_error* err, const as_node* node, const char* req, char* res);
+static void generic_list_res_render(void *udata, const as_node *node, const char *req, char *res);
+static void bins_res_render(void *udata, const as_node *node, const char *req, char *res);
+static void udf_get_res_render(void *udata, const as_node *node, const char *req, char *res);
+static void list_udf_res_render(void *udata, const as_node *node, const char *req, char *res);
+static void list_render(info_obj *iobj, const as_node *node, const char *req, char *res);
 
 //==========================================================
 // Public API.
 //
 
 info_config*
-asql_info_config_create(int optype, char* cmd, char* backout_cmd, bool is_ddl)
+asql_info_config_create(int optype, char* cmd, char *backout_cmd, bool is_ddl)
 {
 	info_config* i = malloc(sizeof(info_config));
 	i->optype = optype; // must be set by caller
@@ -104,35 +100,50 @@ int
 asql_info(asql_config* c, aconfig* ac)
 {
 	info_config* ic = (info_config*)ac;
-	int result = -1;
+	int rv = -1;
 
 	if ((!ic) || (!ic->cmd)) {
-		return result;
+		return rv;
 	}
 
+	as_vector *parsed_resp = NULL;
+	info_obj *iobj = NULL;
+
 	if (strstr(ic->cmd, "namespaces") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
+		iobj = new_obj(generic_list_res_render, (void*)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "sets") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
+		iobj = new_obj(generic_list_res_render, (void*)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "bins") == ic->cmd) {
-		result = info_generic(c, ic, NULL, bins_res_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		iobj = new_obj(bins_res_render, (void *)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "udf-list") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_udf_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		iobj = new_obj(list_udf_res_render, (void *)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "udf-put") == ic->cmd) {
-		result = udfput(c, ic);
+		rv = udfput(c, ic);
 	}
 	else if (strstr(ic->cmd, "udf-remove") == ic->cmd) {
-		result = udfremove(c, ic);
+		rv = udfremove(c, ic);
 	}
 	else if (strstr(ic->cmd, "udf-get") == ic->cmd) {
-		result = info_generic(c, ic, NULL, udf_get_res_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		iobj = new_obj(udf_get_res_render, (void *)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "sindex-list") == ic->cmd) {
-		result = info_generic(c, ic, NULL, list_res_parser, NULL);
+		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		iobj = new_obj(generic_list_res_render, (void *)parsed_resp);
+		rv = info_generic(c, ic, iobj);
 	}
 	else {
 		// An error that should only appear during development.
@@ -141,7 +152,16 @@ asql_info(asql_config* c, aconfig* ac)
 		g_renderer->render_error(errno, err_msg, NULL);
 	}
 
-	return result;
+	if (iobj) {
+		display_obj(iobj, NULL);
+		free_obj(iobj);
+	}
+
+	if (parsed_resp) {
+		as_vector_destroy(parsed_resp);
+	}
+
+	return rv;
 }
 
 //==========================================================
@@ -256,62 +276,58 @@ udfremove(asql_config* c, info_config* ic)
 }
 
 static int
-info_generic(asql_config* c, info_config* ic, const char* success,
-                  res_parser parse_fn, void* udata)
+info_generic(asql_config *c, info_config *ic, info_obj *iobj)
 {
-	as_error err;
 	int rv = 0;
 
 	as_policy_info info_policy;
 	as_policy_info_init(&info_policy);
 	info_policy.timeout = c->base.timeout_ms;
 
-	info_obj* iobj = new_obj(parse_fn, udata);
-
 	if (ic->is_ddl) {
 		char* res = NULL;
-		as_status status = aerospike_info_any(g_aerospike, &err, &info_policy,
-		                                       ic->cmd, &res);
+		as_status status = aerospike_info_any(g_aerospike, &iobj->error, &info_policy,
+											  ic->cmd, &res);
 		if (status == AEROSPIKE_OK) {
-			generic_cb(&err, NULL, ic->cmd, res, iobj);
+			generic_cb(&iobj->error, NULL, ic->cmd, res, iobj);
 			free(res);
 		}
 	}
 	else {
-		aerospike_info_foreach(g_aerospike, &err, &info_policy, ic->cmd,
+		aerospike_info_foreach(g_aerospike, &iobj->error, &info_policy, ic->cmd,
 		                       generic_cb, iobj);
 	}
 
-	if (iobj->error.code != 0) {
+	return rv;
+}
+
+static int
+display_obj(info_obj *iobj, const char *success)
+{
+	int rv = 0;
+
+	if (iobj->error.code != AEROSPIKE_OK) {
 		g_renderer->render_error(iobj->error.code, iobj->error.message,
-		                         iobj->rview);
+								 iobj->rview);
 		rv = -1;
-	}
-	else if (err.code != AEROSPIKE_OK) {
-		g_renderer->render_error(err.code, err.message, iobj->rview);
-		rv = -1;
-	}
-	else if (success) {
+	} else if (success) {
 		g_renderer->render_ok(success, iobj->rview);
-	}
-	else {
+	} else {
 		g_renderer->render_ok("", iobj->rview);
 	}
-
-	free_obj(iobj);
 
 	return rv;
 }
 
 static info_obj*
-new_obj(res_parser parse_fn, void* udata)
+new_obj(parser_callback callback, void *udata)
 {
 	info_obj* iobj = (info_obj*)malloc(sizeof(info_obj));
-	iobj->parse_fn= parse_fn;
+	iobj->callback = callback;
 	iobj->error.code = 0;
+	iobj->rview = g_renderer->view_new(NULL);
 	memset(iobj->error.message, 0, 1024);
 	iobj->udata = udata;
-	iobj->rview = g_renderer->view_new(NULL);
 	return iobj;
 }
 
@@ -322,386 +338,98 @@ free_obj(info_obj* iobj)
 	free(iobj);
 }
 
-static bool
-bins_res_parser(info_obj* parser, const as_error* err,
-            const as_node* node, const char* req, const char* res)
+static void
+list_render(info_obj *iobj, const as_node *node, const char *req, char *res)
 {
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-
-	char* entry_save = NULL;
-	char* entry = strtok_r((char*)res, ";\n", &entry_save);
-	while (entry) {
-
-		char* L = NULL;
-		char* R = NULL;
-
-		char* namespace = NULL;
-		char* num_bin_names = NULL;
-		char* bin_names_quota = NULL;
-
-		L = entry;
-		R = strchr(entry, ':');
-		if (strcmp(R, ":[single-bin]") == 0) {
-			R++;
-			as_hashmap map;
-			as_hashmap_init(&map, 64);
-			as_string key_namespace;
-			as_string_init(&key_namespace, "namespace", false);
-
-			as_string key_count;
-			as_string_init(&key_count, "count", false);
-
-			as_string key_quota;
-			as_string_init(&key_quota, "quota", false);
-
-			as_string key_bin;
-			as_string_init(&key_bin, "bin", false);
-
-			char* ns_save = NULL;
-			namespace = strtok_r((char*)L, ":", &ns_save);
-			as_string val_namespace, val_bin;
-			as_integer val_count;
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_namespace),
-			        (as_val*)as_string_init(&val_namespace, namespace, false));
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_bin),
-			               (as_val*)as_string_init(&val_bin, R, false));
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_count),
-			               (as_val*)as_integer_init(&val_count, 1));
-
-			g_renderer->render((as_val*)&map, rview);
-			as_hashmap_destroy(&map);
-			goto next_tok_parse;
-		}
-
-		*R = '\0';
-
-		namespace = L;
-
-		L = ++R;
-		R = strchr(L, '=');
-
-		L = ++R;
-		R = strchr(L, ',');
-		*R = '\0';
-
-		num_bin_names = L;
-
-		L = ++R;
-		R = strchr(L, '=');
-
-		L = ++R;
-		R = strchr(L, ',');
-
-		if (!R) {
-			goto next_tok_parse;
-		}
-
-		bin_names_quota = L;
-
-		*R = '\0';
-		L = R + 1;
-
-		as_hashmap map;
-		as_hashmap_init(&map, 64);
-
-		as_string key_namespace;
-		as_string_init(&key_namespace, "namespace", false);
-
-		as_string key_count;
-		as_string_init(&key_count, "count", false);
-
-		as_string key_quota;
-		as_string_init(&key_quota, "quota", false);
-
-		as_string key_bin;
-		as_string_init(&key_bin, "bin", false);
-
-		char* bin_save = NULL;
-		char* bin = strtok_r((char*)L, ",", &bin_save);
-		while (bin) {
-
-			as_string val_namespace, val_bin;
-			as_integer val_count, val_quota;
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_namespace),
-					(as_val*)as_string_init(&val_namespace, namespace,
-											 false));
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_bin),
-						   (as_val*)as_string_init(&val_bin, bin, false));
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_count),
-					(as_val*)as_integer_init(&val_count,
-											  atoi(num_bin_names)));
-
-			as_hashmap_set(&map, (as_val*)as_val_reserve(&key_quota),
-					(as_val*)as_integer_init(&val_quota,
-											  atoi(bin_names_quota)));
-
-			g_renderer->render((as_val*)&map, rview);
-
-			as_hashmap_clear(&map);
-			bin = strtok_r(NULL, ",", &bin_save);
-		}
-
-		as_hashmap_destroy(&map);
-
-next_tok_parse:
-
-		entry = strtok_r(NULL, ";\n", &entry_save);
+	if (iobj->error.code != AEROSPIKE_OK) {
+		g_renderer->render_error(iobj->error.code, iobj->error.message, NULL);
+		return;
 	}
 
-	g_renderer->render((as_val*) NULL, rview);
+	g_renderer->view_set_node(node, iobj->rview);
+	as_vector *node_result = (as_vector *)iobj->udata;
 
-	return true;
+	for (int idx = 0; idx < node_result->size; idx++) {
+		as_hashmap *map = as_vector_get_ptr(node_result, idx);
+		g_renderer->render((as_val *)map, iobj->rview);
+		as_hashmap_clear(map);
+		as_hashmap_destroy(map);
+	}
+
+	g_renderer->render((as_val *)NULL, iobj->rview);
+
+	as_vector_clear(node_result);
+
+	return;
+}
+
+static void
+bins_res_render(void *udata, const as_node *node, const char *req, char *res)
+{
+	info_obj* iobj = (info_obj*)udata;
+	as_vector* parsed_resp = (as_vector*)iobj->udata;
+	bins_res_parser(parsed_resp, node, req, res);
+	list_render(iobj, node, req, res);
+}
+
+static void
+udf_get_res_render(void* udata, const as_node *node, const char *req, char *res)
+{
+	info_obj* iobj = (info_obj*)udata;
+	as_vector* parsed_resp = (as_vector*)iobj->udata;
+	udf_get_res_parser(parsed_resp, node, req, res);
+	list_render(iobj, node, req, res);
+}
+
+static void
+list_udf_res_render(void* udata, const as_node *node, const char *req, char *res)
+{
+	info_obj* iobj = (info_obj*)udata;
+	as_vector* parsed_resp = (as_vector*)iobj->udata;
+	list_udf_parser(parsed_resp, node, req, res);
+	list_render(iobj, node, req, res);
+}
+
+static void
+generic_list_res_render(void *udata, const as_node *node, const char *req, char *res)
+{
+	info_obj* iobj = (info_obj*)udata;
+	as_vector* parsed_resp = (as_vector*)iobj->udata;
+	list_res_parser(parsed_resp, node, req, res);
+	list_render(iobj, node, req, res);
 }
 
 static bool
-value_parser(as_hashmap* map, const char* req, const as_val* name,
-             const char* value)
+render_response(info_obj * iobj, const as_error* err, const as_node *node,
+				const char *req, char *res)
 {
-	if (!value){
-		as_hashmap_set(map, (as_val*)name, (as_val*)&as_nil);
+	if (!iobj->callback)
+	{
 		return true;
 	}
 
-	char* endptr = NULL;
-	unsigned long long val = 0;
+	iobj->callback(iobj, node, req, res);
 
-	val = strtoull(value, &endptr, 10);
-	if (*endptr == '\0' && errno == 0) {
-		// NB: Info only sends back unsigned int.
-		char *str = (char *) malloc(sizeof(char) * 32);
-		memset(str, 0, 32);
-		sprintf(str, "%" PRIu64, (uint64_t)val);
-		as_hashmap_set(map, (as_val*)name,
-				(as_val*)as_string_new(str, true));
-	}
-	else {
-		as_hashmap_set(map, (as_val*)name,
-					   (as_val*)as_string_new((char*)value, false));
-	}
-	return true;
-}
-
-static char*
-pair_decode_parser(as_hashmap* map, const char* req, const char* pair)
-{
-	char* name = strdup(pair);
-	char* delim = strstr(name, "=");
-	char* value = NULL;
-
-	if (delim) {
-		delim[0] = '\0';
-		value = delim + 1;
-	}
-
-	uint32_t len = strlen(value);
-	uint8_t* decode_buf = (uint8_t*)malloc(cf_b64_decoded_buf_size(len));
-	cf_b64_decode(value, len, decode_buf, NULL);
-
-	value_parser(map, req, (as_val*)as_string_new(name, true),
-			(char*)decode_buf);
-
-	return (char*)decode_buf;
-}
-
-static bool
-pair_parser(as_hashmap* map, const char* req, const char* pair)
-{
-	char* name = strdup(pair);
-	char* delim = strstr(name, "=");
-	char* value = NULL;
-
-	if (delim) {
-		delim[0] = '\0';
-		value = delim + 1;
-	}
-
-	if (strcasecmp(name, "from") == 0) {
-		// server version above 4.5.2 returns new 'from' field which has <IP>+<PORT> format,
-		// replace '+' with ':' to show regular <IP>:<PORT> format
-
-		for(int i = 0; i < strlen(value); i++)
-		{
-			if(value[i] == '+')
-			{
-				value[i] = ':';
-			}
-		}
-	}
-
-	value_parser(map, req, (as_val*)as_string_new(name, true), value);
-
-	return true;
-}
-
-// NB: Only for udf-get
-static bool
-udf_get_res_parser(info_obj* parser, const as_error* err, const as_node* node,
-          const char* req, const char* res)
-{
-	as_hashmap map;
-	as_hashmap_init(&map, 128);
-
-	char* pair_save = NULL;
-	char* pair = strtok_r((char*)res, ";\n\t", &pair_save);
-	char* dbuf = NULL;
-
-	while (pair) {
-		if (!strncasecmp(pair, "content", 7)) {
-			dbuf = pair_decode_parser(&map, req, pair);
-		}
-		else {
-			pair_parser(&map, req, pair);
-		}
-		pair = strtok_r(NULL, ";\n\t", &pair_save);
-	}
-
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-	g_renderer->render((as_val*)&map, rview);
-	g_renderer->render((as_val*) NULL, rview);
-
-	as_hashmap_destroy(&map);
-
-	if (dbuf) {
-		free(dbuf);
-	}
-
-	return true;
-}
-
-static bool
-list_udf_parser(info_obj* parser, const as_error* err,
-            const as_node* node, const char* req, const char* res)
-{
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-
-	as_hashmap map;
-	as_hashmap_init(&map, 128);
-
-	char* save = NULL;
-	char* entry = strtok_r((char*)res, ";\n", &save);
-
-	while (entry) {
-
-		if (strchr(entry, ',') != NULL) {
-			char* pair_save = NULL;
-			char* pair = strtok_r(entry, ",", &pair_save);
-			while (pair) {
-				pair_parser(&map, req, pair);
-				pair = strtok_r(NULL, ",", &pair_save);
-			}
-
-			g_renderer->render((as_val*)&map, rview);
-		}
-		else {
-			as_string str;
-			as_string_init(&str, (char*)req, false);
-			value_parser(&map, req, (as_val*)&str, entry);
-			g_renderer->render((as_val*)&map, rview);
-		}
-
-		as_hashmap_clear(&map);
-
-		entry = strtok_r(NULL, ";\n", &save);
-	}
-
-	as_hashmap_destroy(&map);
-
-	g_renderer->render((as_val*) NULL, rview);
-
-	return true;
-}
-
-static bool
-list_res_parser(info_obj* parser, const as_error* err,
-            const as_node* node, const char* req, const char* res)
-{
-	void* rview = parser->rview;
-	g_renderer->view_set_node(node, rview);
-
-	as_hashmap map;
-	as_hashmap_init(&map, 128);
-
-	char* save = NULL;
-	char* entry = strtok_r((char*)res, ";\n", &save);
-
-	while (entry) {
-
-		if (strchr(entry, ':') != NULL) {
-			char* pair_save = NULL;
-			char* pair = strtok_r(entry, ":", &pair_save);
-			while (pair) {
-				pair_parser(&map, req, pair);
-				pair = strtok_r(NULL, ":", &pair_save);
-			}
-
-			g_renderer->render((as_val*)&map, rview);
-		}
-		else {
-			as_string str;
-			as_string_init(&str, (char*)req, false);
-			value_parser(&map, req, (as_val*)&str, entry);
-			g_renderer->render((as_val*)&map, rview);
-		}
-
-		as_hashmap_clear(&map);
-
-		entry = strtok_r(NULL, ";\n", &save);
-	}
-
-	as_hashmap_destroy(&map);
-
-	g_renderer->render((as_val*) NULL, rview);
-
-	return true;
-}
-
-static bool
-parse_response(info_obj* iobj, const as_error* err, const as_node* node,
-		const char* req, const char* res)
-{
-	if (!iobj
-   		|| !iobj->parse_fn)	{
-		return true;
-	}
-	iobj->parse_fn(iobj, err, node, req, res);
 	return iobj->error.code ? false : true;
 }
 
 static bool
-generic_cb(const as_error* err, const as_node* node, const char* req,
-		char* res, void* udata)
+generic_cb(const as_error *err, const as_node *node, const char *req,
+			char *res, void *udata)
 {
 	if (err->code != AEROSPIKE_OK) {
 		g_renderer->render_error(err->code, err->message, NULL);
 		return true;
 	}
 
-	if (res == NULL || strlen(res) == 0) {
+	char* resp = info_res_split(res);
+
+	if (resp == NULL) {
 		return true;
 	}
 
-	char* resp = strchr(res, '\t');
-
-	if (resp == NULL || strlen(resp) == 0) {
-		return true;
-	}
-
-	resp++;
-
-	if (resp == NULL || strlen(resp) == 0) {
-		return true;
-	}
-
-	if (udata && parse_response((info_obj*)udata, err,
-										node, req, resp) == false) {
+	if (udata && render_response((info_obj *)udata, err,
+								node, req, resp) == false) {
 		return false;
 	}
 

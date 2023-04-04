@@ -440,14 +440,14 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 
 			case 'P':
 				if (optarg) {
-					base->password = optarg;
+					base->password =  safe_strdup(base->password, optarg);
 				} else {
 					if (optind < argc && NULL != argv[optind] && '-' != argv[optind][0] ) {
 						// space separated argument value
 						base->password = argv[optind++];
 					} else {
 						// no input value, need to prompt
-						base->password = strdup(DEFAULTPASSWORD);
+						base->password = safe_strdup(base->password, DEFAULTPASSWORD);
 					}
 				}
 				break;

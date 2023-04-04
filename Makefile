@@ -126,6 +126,7 @@ OBJECTS += asql.o
 OBJECTS += $(LEXER_SRC:.c=.o)
 OBJECTS += asql_explain.o
 OBJECTS += asql_info.o
+OBJECTS += asql_info_parser.o
 OBJECTS += asql_key.o
 OBJECTS += asql_parser.o
 OBJECTS += asql_print.o
@@ -140,6 +141,7 @@ OBJECTS += renderer/json_renderer.o
 OBJECTS += renderer/table.o
 OBJECTS += renderer/no_renderer.o
 OBJECTS += renderer/raw_renderer.o
+$(info ${OBJECTS})
 aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
 

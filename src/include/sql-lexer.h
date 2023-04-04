@@ -21,4 +21,4 @@
 //==========================================================
 // Public API.
 //
-int as_sql_lexer(char* input, char** token);
+int as_sql_lexer(char* input, char** token, bool peek);
