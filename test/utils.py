@@ -73,7 +73,7 @@ def run_aql(args=None) -> subprocess.CompletedProcess:
 
 def create_client(seed: tuple[str, int] = ("127.0.0.1", 3000)):
     global as_client
-    config = {"hosts": [seed], "timeout": 3000}
+    config = {"hosts": [seed], "timeout": 3}
     as_client = aerospike.client(config)
     print("Successfully connected to seed", seed)
 
@@ -93,6 +93,7 @@ def populate_db(set_name: str):
             "a-int": idx % 5,
             "b-int": idx % 10,
             "float": idx * 3.14,
+            "int-str-mix": str(idx % 5) if idx >= 80 else idx % 10,
         }
         keys.append(key)
         as_client.put(key, bins, policy=write_policy)
@@ -100,12 +101,16 @@ def populate_db(set_name: str):
     print("Successfully populated DB")
 
 
-def create_sindex(name, type_, ns, set, bin):
-    as_client.info_all(
-        "sindex-create:ns={};set={};indexname={};indexdata={},{}".format(
-            ns, set, name, bin, type_
-        )
+def create_sindex(name, type_, ns, bin, set_: str | None = None):
+    req = "sindex-create:ns={};indexname={};indexdata={},{}".format(
+        ns, name, bin, type_
     )
+    
+    if (set_):
+        req += ";set=" + set_
+        
+    as_client.info_all(req)
+    
     time.sleep(3)  # TODO: Instead of sleep wait for sindex to exist
     print("Successfully created secondary index", name)
     

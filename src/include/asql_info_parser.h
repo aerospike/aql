@@ -33,8 +33,8 @@
 // Public API.
 //
 
-bool bins_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
-bool udf_get_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
-bool list_udf_parser(as_vector* result, const as_node *node, const char *req, const char *res);
-bool list_res_parser(as_vector* result, const as_node *node, const char *req, const char *res);
+bool bins_res_parser(as_vector* result, const as_node* node, const char* req, const char* res);
+bool udf_get_res_parser(as_vector* result, const as_node* node, const char* req, const char* res);
+bool list_udf_parser(as_vector* result, const as_node* node, const char* req, const char* res);
+bool list_res_parser(as_vector* result, const as_node* node, const char* req, const char* res);
 char* info_res_split(const char* res);

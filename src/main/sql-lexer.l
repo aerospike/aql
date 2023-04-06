@@ -213,6 +213,7 @@ int as_sql_lexer(char *input, char **token, bool peek)
       }
 
       if (peek) {
+         // Allows for peeking at the next token without consuming it.
          char *yycopy = strdup( yytext );
          for (int i = yyleng - 1; i >= 0; --i) {
             unput(yycopy[i]);

@@ -51,7 +51,7 @@
 // Forward Declarations.
 //
 
-static bool value_parser(as_hashmap *map, const char *req, const as_val *name, const char *value);
+static bool value_parser(as_hashmap* map, const char* req, const as_val* name, const char* value);
 static bool pair_parser(as_hashmap* map, const char* req, const char* pair);
 static char* pair_decode_parser(as_hashmap* map, const char* req, const char* pair);
 
@@ -61,7 +61,7 @@ static char* pair_decode_parser(as_hashmap* map, const char* req, const char* pa
 
 // NB: Only for udf-get
 bool
-udf_get_res_parser(as_vector* result, const as_node *node, const char *req, const char *res)
+udf_get_res_parser(as_vector* result, const as_node* node, const char* req, const char* res)
 {
 	as_hashmap* map = as_hashmap_new(128);
 
@@ -107,13 +107,13 @@ bins_res_parser(as_vector* result, const as_node* node, const char* req, const c
 
 			char* ns_save = NULL;
 			namespace = strtok_r((char*)L, ":", &ns_save);
-			as_hashmap_set(map, (as_val*)as_val_reserve(key_namespace),
+			as_hashmap_set(map, (as_val*)key_namespace,
 			        (as_val*)as_string_new(namespace, false));
 
-			as_hashmap_set(map, (as_val*)as_val_reserve(key_bin),
+			as_hashmap_set(map, (as_val*)key_bin,
 			               (as_val*)as_string_new(R, false));
 
-			as_hashmap_set(map, (as_val*)as_val_reserve(key_count),
+			as_hashmap_set(map, (as_val*)key_count,
 			               (as_val*)as_integer_new(1));
 
 			as_vector_append(result, (void*)&map);
@@ -187,7 +187,7 @@ next_tok_parse:
 }
 
 bool
-list_udf_parser(as_vector* result, const as_node *node, const char *req, const char *res)
+list_udf_parser(as_vector* result, const as_node* node, const char* req, const char* res)
 {
 	char* save = NULL;
 	char* entry = strtok_r((char*)res, ";\n", &save);
@@ -217,9 +217,9 @@ list_udf_parser(as_vector* result, const as_node *node, const char *req, const c
 }
 
 bool
-list_res_parser(as_vector* result, const as_node *node, const char *req, const char *res)
+list_res_parser(as_vector* result, const as_node* node, const char* req, const char* res)
 {
-	as_vector *parsed_resp = result;
+	as_vector* parsed_resp = result;
 	char* save = NULL;
 	char* orig_res = strdup(res);
 	char* entry = strtok_r((char*)res, ";\n", &save);
@@ -270,7 +270,7 @@ info_res_split(char* res) {
 		return NULL;
 	}
 
-	char *resp = strchr(res, '\t');
+	char* resp = strchr(res, '\t');
 
 	if (resp == NULL || strlen(resp) == 0)
 	{
@@ -302,7 +302,7 @@ value_parser(as_hashmap* map, const char* req, const as_val* name,
 	val = strtoull(value, &endptr, 10);
 	if (*endptr == '\0' && errno == 0) {
 		// NB: Info only sends back unsigned int.
-		char *str = (char *) malloc(sizeof(char) * 32);
+		char* str = (char *) malloc(sizeof(char) * 32);
 		memset(str, 0, 32);
 		sprintf(str, "%" PRIu64, (uint64_t)val);
 		as_hashmap_set(map, (as_val*)name,
@@ -314,6 +314,10 @@ value_parser(as_hashmap* map, const char* req, const as_val* name,
 	}
 	return true;
 }
+
+//==========================================================
+// Local Helpers.
+//
 
 static char*
 pair_decode_parser(as_hashmap* map, const char* req, const char* pair)

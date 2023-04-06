@@ -63,7 +63,7 @@ static bool parse_ns_and_set(tokenizer* tknzr, char** ns, char** set);
 static bool parse_name_list(tokenizer* tknzr, as_vector* v, bool allow_empty);
 static bool parse_pkey(tokenizer* tknzr, asql_value* value);
 static bool parse_naked_name_list(tokenizer* tknzr, as_vector* v);
-static bool parse_skey(tokenizer *tknzr, asql_where *where, asql_where **where2);
+static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_where **where2);
 static bool parse_in(tokenizer* tknzr, asql_name* itype);
 static char* parse_module(tokenizer* tknzr, bool filename_only);
 static char* parse_module_pathname(tokenizer* tknzr);
@@ -380,7 +380,7 @@ aql_parse_desc(tokenizer* tknzr)
 	sprintf(infocmd, "udf-get:filename=%s\n", filename);
 	free(filename);
 
-	info_config *i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
+	info_config* i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
 	return (aconfig*)i;
 }
 
@@ -557,13 +557,13 @@ is_quoted_literal(char* s)
 // Does not check for all illegal character in https://docs.aerospike.com/guide/limitations
 // just the ones that commonly mess up the info protocol
 static bool
-check_illegal_characters(char *s)
+check_illegal_characters(char* s)
 {
 	if (s == NULL) {
 		return false;
 	}
 
-	char *c = NULL;
+	char* c = NULL;
 	if ((c = strstr(s, ";")) || (c = strstr(s, ":")))
 	{
 		char err_msg[25];
@@ -575,7 +575,7 @@ check_illegal_characters(char *s)
 }
 
 static bool
-lut_is_valid(char *lut_str, uint64_t lut)
+lut_is_valid(char* lut_str, uint64_t lut)
 {
 	char err_msg[1024];
 
@@ -584,7 +584,7 @@ lut_is_valid(char *lut_str, uint64_t lut)
 
 		time_t rawtime;
 		time(&rawtime);
-		struct tm *cur_tm = localtime(&rawtime);
+		struct tm* cur_tm = localtime(&rawtime);
 
 		char buf[255];
 		strftime(buf, sizeof(buf), "%b %d %Y %H:%M:%S", cur_tm);
@@ -599,7 +599,7 @@ lut_is_valid(char *lut_str, uint64_t lut)
 }
 
 static bool
-parse_lut(char* s, uint64_t *lut)
+parse_lut(char* s, uint64_t* lut)
 {
 	char lut_str[256];
 	memset(lut_str, 0, 256);
@@ -919,7 +919,7 @@ parse_pkey(tokenizer* tknzr, asql_value* value)
 }
 
 static bool
-parse_skey(tokenizer *tknzr, asql_where *where, asql_where **where2)
+parse_skey(tokenizer* tknzr, asql_where* where, asql_where **where2)
 {
 	// SECONDARY INDEX QUERY
 	if (!parse_name(tknzr->tok, &where->ibname, false)) {
@@ -944,7 +944,7 @@ parse_skey(tokenizer *tknzr, asql_where *where, asql_where **where2)
 		free(peek);
 
 		GET_NEXT_TOKEN_OR_RETURN(true);
-		if (strcasecmp(tknzr->tok, "and"))
+		if (strcasecmp(tknzr->tok, "AND"))
 		{
 			return false;
 		}
@@ -1213,7 +1213,7 @@ parse_error:
 }
 
 static bool
-parse_limit(tokenizer *tknzr, asql_value **value) 
+parse_limit(tokenizer* tknzr, asql_value **value) 
 {
 	if (strcasecmp(tknzr->tok, "LIMIT")) {
 		return false;
@@ -1236,7 +1236,7 @@ parse_limit(tokenizer *tknzr, asql_value **value)
 	return true;
 }
 
-static aconfig *parse_query(tokenizer *tknzr, int type)
+static aconfig* parse_query(tokenizer* tknzr, int type)
 {
 	asql_name ns = NULL;
 	asql_name set = NULL;
@@ -1393,7 +1393,13 @@ static aconfig *parse_query(tokenizer *tknzr, int type)
 
 	if (!parse_skey(tknzr, &s->where, &s->where2)) {
 		get_next_token(tknzr);
-		if (tknzr->tok && ((!strcasecmp(tknzr->tok, "and") && s->where.qtype != ASQL_QUERY_TYPE_NONE) || s->where2 != NULL)) {
+		
+		/*
+		 * If someone tried to type "BETWEEN a = 1 and b = 3 and . . ." or if 
+		 * there was an error parsing the double where clause like 
+		 * "a = 1 and b != 3" (!= not supported).
+		 */
+		if (tknzr->tok && ((!strcasecmp(tknzr->tok, "AND") && s->where.qtype != ASQL_QUERY_TYPE_NONE) || s->where2 != NULL)) {
 			fprintf(stderr, "Unsupported command format\n");
 			fprintf(stderr, "Double where clause only supports '=' expressions.\n");
 		} else {

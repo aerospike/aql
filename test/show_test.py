@@ -11,14 +11,15 @@ class ShowPositiveTest(unittest.TestCase):
         cls.addClassCleanup(lambda: utils.shutdown_containers(utils.SET_NAME))
         utils.create_client((cls.ips[0], 3000))
         utils.populate_db(utils.SET_NAME)
-        utils.create_sindex("a-str-index", "string", "test", utils.SET_NAME, "a-str")
-        utils.create_sindex("b-str-index", "string", "test", utils.SET_NAME, "b-str")
-        utils.create_sindex("a-int-index", "numeric", "test", utils.SET_NAME, "a-int")
-        utils.create_sindex("b-int-index", "numeric", "test", utils.SET_NAME, "b-int")
+        utils.create_sindex("a-str-index", "string", "test", "a-str", set_=utils.SET_NAME)
+        utils.create_sindex("b-str-index", "string", "test", "b-str", set_=utils.SET_NAME)
+        utils.create_sindex("a-int-index", "numeric", "test", "a-int", set_=utils.SET_NAME)
+        utils.create_sindex("b-int-index", "numeric", "test", "b-int", set_=utils.SET_NAME)
+        
 
     @parameterized.expand(
         [
-            ("set output json; show bins", 7, ["bin", "count", "namespace", "quota"]),
+            ("set output json; show bins", 8, ["bin", "count", "namespace", "quota"]),
             ("set output json; show namespaces", 2, ["namespaces"]),
             (
                 "set output json; show indexes",

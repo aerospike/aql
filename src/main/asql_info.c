@@ -49,7 +49,7 @@
 
 struct info_obj_s;
 
-typedef void (*parser_callback)(void *udata, const as_node *node, const char *req, char *res);
+typedef void (*parser_callback)(void* udata, const as_node* node, const char* req, char* res);
 
 
 typedef struct info_obj_s {
@@ -67,25 +67,25 @@ typedef struct info_obj_s {
 
 static int udfput(asql_config* c, info_config* ic);
 static int udfremove(asql_config* c, info_config* ic);
-static int info_generic(asql_config *c, info_config *ic, info_obj *iobj);
+static int info_generic(asql_config* c, info_config* ic, info_obj* iobj);
 
-static info_obj *new_obj(parser_callback callback, void *udata);
+static info_obj* new_obj(parser_callback callback, void* udata);
 static void free_obj(info_obj* iobj);
-static int display_obj(info_obj *iobj, const char *success);
+static int display_obj(info_obj* iobj, const char* success);
 static bool generic_cb(const as_error* err, const as_node* node, const char* req, char* res, void* udata);
 static bool render_response(info_obj* iobj, const as_error* err, const as_node* node, const char* req, char* res);
-static void generic_list_res_render(void *udata, const as_node *node, const char *req, char *res);
-static void bins_res_render(void *udata, const as_node *node, const char *req, char *res);
-static void udf_get_res_render(void *udata, const as_node *node, const char *req, char *res);
-static void list_udf_res_render(void *udata, const as_node *node, const char *req, char *res);
-static void list_render(info_obj *iobj, const as_node *node, const char *req, char *res);
+static void generic_list_res_render(void* udata, const as_node* node, const char* req, char* res);
+static void bins_res_render(void* udata, const as_node* node, const char* req, char* res);
+static void udf_get_res_render(void* udata, const as_node* node, const char* req, char* res);
+static void list_udf_res_render(void* udata, const as_node* node, const char* req, char* res);
+static void list_render(info_obj* iobj, const as_node* node, const char* req, char* res);
 
 //==========================================================
 // Public API.
 //
 
 info_config*
-asql_info_config_create(int optype, char* cmd, char *backout_cmd, bool is_ddl)
+asql_info_config_create(int optype, char* cmd, char* backout_cmd, bool is_ddl)
 {
 	info_config* i = malloc(sizeof(info_config));
 	i->optype = optype; // must be set by caller
@@ -106,8 +106,8 @@ asql_info(asql_config* c, aconfig* ac)
 		return rv;
 	}
 
-	as_vector *parsed_resp = NULL;
-	info_obj *iobj = NULL;
+	as_vector* parsed_resp = NULL;
+	info_obj* iobj = NULL;
 
 	if (strstr(ic->cmd, "namespaces") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
@@ -120,12 +120,12 @@ asql_info(asql_config* c, aconfig* ac)
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "bins") == ic->cmd) {
-		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
 		iobj = new_obj(bins_res_render, (void *)parsed_resp);
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "udf-list") == ic->cmd) {
-		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
+		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
 		iobj = new_obj(list_udf_res_render, (void *)parsed_resp);
 		rv = info_generic(c, ic, iobj);
 	}
@@ -276,7 +276,7 @@ udfremove(asql_config* c, info_config* ic)
 }
 
 static int
-info_generic(asql_config *c, info_config *ic, info_obj *iobj)
+info_generic(asql_config* c, info_config* ic, info_obj* iobj)
 {
 	int rv = 0;
 
@@ -302,7 +302,7 @@ info_generic(asql_config *c, info_config *ic, info_obj *iobj)
 }
 
 static int
-display_obj(info_obj *iobj, const char *success)
+display_obj(info_obj* iobj, const char* success)
 {
 	int rv = 0;
 
@@ -320,7 +320,7 @@ display_obj(info_obj *iobj, const char *success)
 }
 
 static info_obj*
-new_obj(parser_callback callback, void *udata)
+new_obj(parser_callback callback, void* udata)
 {
 	info_obj* iobj = (info_obj*)malloc(sizeof(info_obj));
 	iobj->callback = callback;
@@ -339,7 +339,7 @@ free_obj(info_obj* iobj)
 }
 
 static void
-list_render(info_obj *iobj, const as_node *node, const char *req, char *res)
+list_render(info_obj* iobj, const as_node* node, const char* req, char* res)
 {
 	if (iobj->error.code != AEROSPIKE_OK) {
 		g_renderer->render_error(iobj->error.code, iobj->error.message, NULL);
@@ -347,12 +347,11 @@ list_render(info_obj *iobj, const as_node *node, const char *req, char *res)
 	}
 
 	g_renderer->view_set_node(node, iobj->rview);
-	as_vector *node_result = (as_vector *)iobj->udata;
+	as_vector* node_result = (as_vector *)iobj->udata;
 
 	for (int idx = 0; idx < node_result->size; idx++) {
-		as_hashmap *map = as_vector_get_ptr(node_result, idx);
+		as_hashmap* map = as_vector_get_ptr(node_result, idx);
 		g_renderer->render((as_val *)map, iobj->rview);
-		as_hashmap_clear(map);
 		as_hashmap_destroy(map);
 	}
 
@@ -364,7 +363,7 @@ list_render(info_obj *iobj, const as_node *node, const char *req, char *res)
 }
 
 static void
-bins_res_render(void *udata, const as_node *node, const char *req, char *res)
+bins_res_render(void* udata, const as_node* node, const char* req, char* res)
 {
 	info_obj* iobj = (info_obj*)udata;
 	as_vector* parsed_resp = (as_vector*)iobj->udata;
@@ -373,7 +372,7 @@ bins_res_render(void *udata, const as_node *node, const char *req, char *res)
 }
 
 static void
-udf_get_res_render(void* udata, const as_node *node, const char *req, char *res)
+udf_get_res_render(void* udata, const as_node* node, const char* req, char* res)
 {
 	info_obj* iobj = (info_obj*)udata;
 	as_vector* parsed_resp = (as_vector*)iobj->udata;
@@ -382,7 +381,7 @@ udf_get_res_render(void* udata, const as_node *node, const char *req, char *res)
 }
 
 static void
-list_udf_res_render(void* udata, const as_node *node, const char *req, char *res)
+list_udf_res_render(void* udata, const as_node* node, const char* req, char* res)
 {
 	info_obj* iobj = (info_obj*)udata;
 	as_vector* parsed_resp = (as_vector*)iobj->udata;
@@ -391,7 +390,7 @@ list_udf_res_render(void* udata, const as_node *node, const char *req, char *res
 }
 
 static void
-generic_list_res_render(void *udata, const as_node *node, const char *req, char *res)
+generic_list_res_render(void* udata, const as_node* node, const char* req, char* res)
 {
 	info_obj* iobj = (info_obj*)udata;
 	as_vector* parsed_resp = (as_vector*)iobj->udata;
@@ -400,8 +399,8 @@ generic_list_res_render(void *udata, const as_node *node, const char *req, char 
 }
 
 static bool
-render_response(info_obj * iobj, const as_error* err, const as_node *node,
-				const char *req, char *res)
+render_response(info_obj * iobj, const as_error* err, const as_node* node,
+				const char* req, char* res)
 {
 	if (!iobj->callback)
 	{
@@ -414,8 +413,8 @@ render_response(info_obj * iobj, const as_error* err, const as_node *node,
 }
 
 static bool
-generic_cb(const as_error *err, const as_node *node, const char *req,
-			char *res, void *udata)
+generic_cb(const as_error* err, const as_node* node, const char* req,
+			char* res, void* udata)
 {
 	if (err->code != AEROSPIKE_OK) {
 		g_renderer->render_error(err->code, err->message, NULL);

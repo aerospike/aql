@@ -444,7 +444,7 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 				} else {
 					if (optind < argc && NULL != argv[optind] && '-' != argv[optind][0] ) {
 						// space separated argument value
-						base->password = argv[optind++];
+						base->password = safe_strdup(base->password, argv[optind++]);
 					} else {
 						// no input value, need to prompt
 						base->password = safe_strdup(base->password, DEFAULTPASSWORD);
@@ -1166,10 +1166,10 @@ config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char
 }
 
 static bool
-config_from_dir(asql_config* c, const char* instance, char *dirname, int level)
+config_from_dir(asql_config* c, const char* instance, char* dirname, int level)
 {
-	DIR *dp;
-	struct dirent *entry;
+	DIR* dp;
+	struct dirent* entry;
 
 	if ((dp = opendir(dirname)) == NULL) {
 		fprintf(stderr, "Failed to open directory %s\n", dirname);

@@ -231,6 +231,7 @@ do_prompt(asql_config* c)
 		add_history(cmd);
 
 		if (!parse_and_run_colon_delim(c, (char* )cmd)) {
+			free(cmd);
 			break;
 		}
 		g_inprogress = false;

@@ -432,6 +432,7 @@ destroy_skconfig(aconfig* ac)
 	destroy_udf_param(&s->u);
 	destroy_where(&s->where);
 	destroy_where(s->where2);
+	free(s->where2);
 	free(s->limit);
 
 	free(s);

@@ -65,11 +65,12 @@ typedef struct {
 //
 
 extern void asql_record_set_renderer(as_record* rec, as_hashmap* m, char* bin_name, as_val* val);
-static bool cardinality_callback(const as_error *err, const as_node *node, const char *req, char *res, void *udata);
-static uint32_t get_bin_cardinality(as_error* err, asql_name ns, asql_name index_name);
-static int compare_bin_cardinality(const asql_name ns, const asql_name set, asql_name ibname, asql_name ibname2, bool* exists, as_error *err);
-static void populate_filter_exp(as_exp **filter, asql_where *where, as_error *err);
-static int populate_where(as_query* query, as_policy_query* policy, sk_config* s, as_error *err);
+static bool epbv_callback(const as_error* err, const as_node* node, const char* req, char* res, void* udata);
+static double get_avg_rec_per_bval(as_error* err, asql_name ns, asql_name index_name);
+static bool ibname_equal(asql_name ibname, asql_name set, as_val_t type, char* bin_val, char* set_val, char* type_val);
+static int compare_avg_rec_per_bval(const asql_name ns, const asql_name set, asql_name ibname, as_val_t type, asql_name ibname2, as_val_t type2, bool* exists, as_error* err);
+static void populate_filter_exp(as_exp **filter, asql_where* where, as_error* err);
+static int populate_where(as_query* query, as_policy_query* policy, sk_config* s, as_error* err);
 static bool query_callback(const as_val* val, void* udata);
 static int query_select(asql_config* c, sk_config* s);
 static int query_execute(asql_config* c, sk_config* s);
@@ -187,17 +188,20 @@ asql_query(asql_config* c, aconfig* ac)
 // Local Helpers.
 //
 
-static bool cardinality_callback(const as_error *err, const as_node *node, const char *req, char *res, void *udata)
+// entries_per_bval
+static bool epbv_callback(const as_error* err, const as_node* node, const char* req, char* res, void* udata)
 {
 	if (err->code != AEROSPIKE_OK) {
 		return false;
 	}
 
-	char* resp = strdup(info_res_split(res));
+	char* resp = info_res_split(res);
 
 	if (resp == NULL) {
 		return false;
 	}
+
+	resp = strdup(resp);
 
 	double* total_ebp = (double*)udata;
 	as_vector* parsed_result = as_vector_create(sizeof(as_hashmap*), 1);
@@ -223,6 +227,7 @@ static bool cardinality_callback(const as_error *err, const as_node *node, const
 			// Unable to determine cardinality. Likely server 6.0 or much older
 			as_hashmap_destroy(map);
 			as_vector_destroy(parsed_result);
+			free(resp);
 			return true;
 		}
 
@@ -232,6 +237,7 @@ static bool cardinality_callback(const as_error *err, const as_node *node, const
 			// I think 'entries' has always existed so not sure this is possible.
 			as_hashmap_destroy(map);
 			as_vector_destroy(parsed_result);
+			free(resp);
 			return true;
 		}
 
@@ -248,16 +254,17 @@ static bool cardinality_callback(const as_error *err, const as_node *node, const
 
 	as_hashmap_destroy(map);
 	as_vector_destroy(parsed_result);
+	free(resp);
 	return true;
 }
 
-static uint32_t get_bin_cardinality(as_error* err, asql_name ns, asql_name index_name) {
-	char *req = malloc(sizeof(char *) * 7 + strlen(ns) + 1 + strlen(index_name) + 1);
+static double get_avg_rec_per_bval(as_error* err, asql_name ns, asql_name index_name) {
+	char* req = malloc(sizeof(char *) * 7 + strlen(ns) + 1 + strlen(index_name) + 1);
 	double cardinality = 0.0f;
 	double total_epb = 0.0f;
 	sprintf(req, "sindex/%s/%s", ns, index_name);
 
-	if (aerospike_info_foreach(g_aerospike, err, NULL, req, cardinality_callback, &total_epb) != AEROSPIKE_OK) {
+	if (aerospike_info_foreach(g_aerospike, err, NULL, req, epbv_callback, &total_epb) != AEROSPIKE_OK) {
 		return 0;
 	}
 
@@ -274,14 +281,27 @@ static uint32_t get_bin_cardinality(as_error* err, asql_name ns, asql_name index
 	return cardinality;
 }
 
+static bool
+ibname_equal(asql_name ibname, asql_name set, as_val_t type, char* bin_val, char* set_val, char* type_val) 
+{
+	if (!strcmp(bin_val, ibname) && 
+		!strcmp(set_val, set) && 
+		((type == AS_INTEGER && !strcasecmp(type_val, "NUMERIC")) ||
+		(type == AS_STRING && !strcasecmp(type_val, "STRING")))) {
+		return true;
+	}
+
+	return false;
+}
+
 static int
-compare_bin_cardinality(const asql_name ns, const asql_name set, asql_name ibname, asql_name ibname2, bool* exists, as_error *err)
+compare_avg_rec_per_bval(const asql_name ns, asql_name set, asql_name ibname, as_val_t type, asql_name ibname2, as_val_t type2, bool* exists, as_error* err)
 {
 	// returns positive ibname > ibname2
 	// returns negative ibname < ibname2
 	int rv = 0;
 	*exists = true;
-	char *req = malloc(sizeof(char *) * 7 + strlen(ns) + 1);
+	char* req = malloc(sizeof(char *) * 7 + strlen(ns) + 1);
 	char* res = NULL;
 	sprintf(req, "sindex/%s", ns);
 	as_vector* responses = as_vector_create(sizeof(as_hashmap*), 128);
@@ -296,9 +316,11 @@ compare_bin_cardinality(const asql_name ns, const asql_name set, asql_name ibnam
 	double ibname2_card = 0;
 	as_string bin_key;
 	as_string set_key;
+	as_string type_key;
 	as_string index_key;
 	as_string_init(&bin_key, "bin", false);
 	as_string_init(&set_key, "set", false);
+	as_string_init(&type_key, "type", false);
 	as_string_init(&index_key, "indexname", false);
 
 	const char* resp = info_res_split(res);
@@ -310,25 +332,21 @@ compare_bin_cardinality(const asql_name ns, const asql_name set, asql_name ibnam
 
 	list_res_parser(responses, NULL, req, resp);
 
+	if (!set) {
+		set = "NULL";
+	}
+
 	for (int idx = 0; idx < responses->size; idx++) {
 		as_hashmap* map = as_vector_get_ptr(responses, idx);
-		char* binVal = as_string_get(as_string_fromval(as_hashmap_get(map, (as_val*)&bin_key)));
+		char* bin_val = as_string_get(as_string_fromval(as_hashmap_get(map, (as_val*)&bin_key)));
+		char* set_val = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&set_key))));
+		char* type_val = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&type_key))));
 
-		if (binVal == NULL) {
-			continue;
+		if (ibname_equal(ibname, set, type, bin_val, set_val, type_val)) {
+			ibname_index = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&index_key))));
 		}
-
-		if (!strcmp(binVal, ibname)) {
-			char *set_val = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&set_key))));
-			if (set_val != NULL && !strcmp(set_val, set)) {
-				ibname_index = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&index_key))));
-			}
-		}
-		else if (!strcmp(binVal, ibname2)) {
-			char *set_val = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&set_key))));
-			if (set_val != NULL && !strcmp(set_val, set)) {
-				ibname2_index = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&index_key))));
-			}
+		else if (ibname_equal(ibname2, set, type2, bin_val, set_val, type_val)) {
+			ibname2_index = as_string_get(as_string_fromval(as_hashmap_get(map, as_string_toval(&index_key))));
 		}
 	}
 
@@ -348,8 +366,8 @@ compare_bin_cardinality(const asql_name ns, const asql_name set, asql_name ibnam
 		goto cleanup;
 	}
 
-	ibname_card = get_bin_cardinality(err, ns, ibname_index);
-	ibname2_card = get_bin_cardinality(err, ns, ibname2_index);
+	ibname_card = get_avg_rec_per_bval(err, ns, ibname_index);
+	ibname2_card = get_avg_rec_per_bval(err, ns, ibname2_index);
 	
 	if (ibname_card > ibname2_card) {
 		rv = 1;
@@ -370,12 +388,13 @@ cleanup:
 	}
 
 	as_vector_destroy(responses);
+	free(req);
+	free(res);
 	return rv;
-
 }
 
 static void
-populate_filter_exp(as_exp **filter, asql_where *where, as_error *err) {
+populate_filter_exp(as_exp **filter, asql_where* where, as_error* err) {
 	asql_name ibname = where->ibname;
 	asql_value* beg = &where->beg;
 	as_val_t bin_type = where->beg.type;
@@ -395,9 +414,9 @@ populate_filter_exp(as_exp **filter, asql_where *where, as_error *err) {
 }
 
 static int
-populate_where(as_query *query, as_policy_query *policy, sk_config *s, as_error *err)
+populate_where(as_query* query, as_policy_query* policy, sk_config* s, as_error* err)
 {
-	asql_where *chosen_where = NULL;
+	asql_where* chosen_where = NULL;
 
 	if (s->where2) {
 		if (policy == NULL) {
@@ -408,7 +427,7 @@ populate_where(as_query *query, as_policy_query *policy, sk_config *s, as_error 
 		char* bin1 = s->where.ibname;
 		char* bin2 = s->where2->ibname;
 		bool both_exist = true;
-		int rv = compare_bin_cardinality(s->ns, s->set, bin1, bin2, &both_exist, err);
+		int rv = compare_avg_rec_per_bval(s->ns, s->set, bin1, s->where.beg.type, bin2, s->where2->beg.type, &both_exist, err);
 
 		if (err->code != AEROSPIKE_OK) {
 			as_error_append(err, "Unable to determine cardinality");
@@ -439,13 +458,13 @@ populate_where(as_query *query, as_policy_query *policy, sk_config *s, as_error 
 	}
 
 	asql_name ibname = chosen_where->ibname;
-	asql_value *beg = &chosen_where->beg;
-	asql_value *end = &chosen_where->end;
+	asql_value* beg = &chosen_where->beg;
+	asql_value* end = &chosen_where->end;
 	as_val_t bin_type = chosen_where->beg.type;
-	asql_query_type_t query_type = s->where.qtype;
+	asql_query_type_t query_type = chosen_where->qtype;
 
 	if (s->itype) {
-		if (chosen_where->beg.type == AS_INTEGER) { // Integer Range
+		if (bin_type == AS_INTEGER) { // Integer Range
 			if (!strcasecmp(s->itype, "LIST")) {
 				as_query_where(query, ibname,
 						as_range(LIST, NUMERIC, beg->u.i64, end->u.i64));
@@ -524,7 +543,7 @@ populate_where(as_query *query, as_policy_query *policy, sk_config *s, as_error 
 }
 
 static void 
-new_query_cb_udata(query_cb_udata *query_udata, void* rview, int64_t record_limit) {
+new_query_cb_udata(query_cb_udata* query_udata, void* rview, int64_t record_limit) {
 	query_udata->rview = rview;
 
 	if (record_limit == -1) {
