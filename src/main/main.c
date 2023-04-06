@@ -231,6 +231,7 @@ do_prompt(asql_config* c)
 		add_history(cmd);
 
 		if (!parse_and_run_colon_delim(c, (char* )cmd)) {
+			free(cmd);
 			break;
 		}
 		g_inprogress = false;
@@ -269,7 +270,7 @@ asql_init(asql_config* c)
 	if (c->base.user) {
 		// Prompt after first screen
 		if (strcmp(c->base.password, DEFAULTPASSWORD) == 0) {
-			c->base.password = getpass("Enter Password: ");
+			c->base.password = strdup(getpass("Enter Password: "));
 		}
 
 		if (! as_config_set_user(&config, c->base.user, c->base.password)) {
@@ -296,7 +297,7 @@ asql_init(asql_config* c)
 
 	if (c->base.tls.keyfile && c->base.tls.keyfile_pw) {
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
-			c->base.tls.keyfile_pw = getpass("Enter TLS-Keyfile Password: ");
+			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
 
 		if (!tls_read_password(c->base.tls.keyfile_pw, &c->base.tls.keyfile_pw)) {
@@ -349,6 +350,7 @@ asql_shutdown(asql_config* c)
 	}
 
 	aerospike_destroy(g_aerospike);
+	destroy_asqlconfig(c);
 	fprintf(stdout, "\n");
 }
 

@@ -21,6 +21,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include <asql_tokenizer.h>
 
@@ -41,7 +42,7 @@ init_tokenizer(tokenizer* tknzr, char* cmd)
 	bzero(tknzr, sizeof(tokenizer));
 	tknzr->ocmd = strdup(cmd);
 	int rv;
-	if ((rv = as_sql_lexer(cmd, &tknzr->tok))) {
+	if ((rv = as_sql_lexer(cmd, &tknzr->tok, false))) {
 //		fprintf(stderr, "Warning:  Lexer returned %d\n", rv);
 	}
 }
@@ -59,7 +60,14 @@ void
 predicting_parse_error(tokenizer* tknzr)
 {
 	if (!tknzr->tok) {
-		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->ocmd);
+		// Get last token
+		as_sql_lexer(tknzr->ocmd, &tknzr->tok, false);
+		char* tok = tknzr->tok;
+		while (!as_sql_lexer(0, &tknzr->tok, false)) {
+			tok = tknzr->tok;
+		}
+
+		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tok);
 		fprintf(stderr, "Make sure string values are enclosed in quotes.\n");
 		fprintf(stderr, "Type \" aql --help \" from console or simply \"help\" from within the aql-prompt. \n\n");
 	}

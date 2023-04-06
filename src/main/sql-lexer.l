@@ -176,7 +176,7 @@ static char *uc(char *str)
  *    -1 -- End of token stream reached:  Token is NULL, and iteration is terminated.
  *    -2 -- Lexer error:  Token is NULL, and iteration is terminated.
  */
-int as_sql_lexer(char *input, char **token)
+int as_sql_lexer(char *input, char **token, bool peek)
 {
    static char *sql_str;
    static bool done = false;
@@ -185,10 +185,19 @@ int as_sql_lexer(char *input, char **token)
    int rv = OK;
 
    if (input) {
+      /*
+       * Enlarge the input buffer by 1. This enables the use of peek on the first token.
+       * For whatever reason, using unput on the first token causes a buffer underflow.
+       */
+      char* tmp_input = malloc(sizeof(char) * (strlen(input) + 2));
+      memcpy(tmp_input + 1, input, strlen(input) + 1);
+      tmp_input[0] = ' ';
+
       gError = false;
       done = false;
-      sql_str = input;
+      sql_str = tmp_input;
       yy_scan_string(sql_str);
+      free(tmp_input);
    }
 
    if (done) {
@@ -201,6 +210,15 @@ int as_sql_lexer(char *input, char **token)
    if ((token_id = yylex())) {
       if (token) {
           *token = gToken;
+      }
+
+      if (peek) {
+         // Allows for peeking at the next token without consuming it.
+         char *yycopy = strdup( yytext );
+         for (int i = yyleng - 1; i >= 0; --i) {
+            unput(yycopy[i]);
+         }
+         *token = yycopy;
       }
       rv = OK;
    } else if (gError) {

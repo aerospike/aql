@@ -63,7 +63,7 @@ static bool parse_ns_and_set(tokenizer* tknzr, char** ns, char** set);
 static bool parse_name_list(tokenizer* tknzr, as_vector* v, bool allow_empty);
 static bool parse_pkey(tokenizer* tknzr, asql_value* value);
 static bool parse_naked_name_list(tokenizer* tknzr, as_vector* v);
-static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname);
+static bool parse_skey(tokenizer* tknzr, asql_where* where, asql_where **where2);
 static bool parse_in(tokenizer* tknzr, asql_name* itype);
 static char* parse_module(tokenizer* tknzr, bool filename_only);
 static char* parse_module_pathname(tokenizer* tknzr);
@@ -380,7 +380,7 @@ aql_parse_desc(tokenizer* tknzr)
 	sprintf(infocmd, "udf-get:filename=%s\n", filename);
 	free(filename);
 
-	info_config *i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
+	info_config* i = asql_info_config_create(ASQL_OP_DESC, strdup(infocmd), NULL, false);
 	return (aconfig*)i;
 }
 
@@ -557,13 +557,13 @@ is_quoted_literal(char* s)
 // Does not check for all illegal character in https://docs.aerospike.com/guide/limitations
 // just the ones that commonly mess up the info protocol
 static bool
-check_illegal_characters(char *s)
+check_illegal_characters(char* s)
 {
 	if (s == NULL) {
 		return false;
 	}
 
-	char *c = NULL;
+	char* c = NULL;
 	if ((c = strstr(s, ";")) || (c = strstr(s, ":")))
 	{
 		char err_msg[25];
@@ -575,7 +575,7 @@ check_illegal_characters(char *s)
 }
 
 static bool
-lut_is_valid(char *lut_str, uint64_t lut)
+lut_is_valid(char* lut_str, uint64_t lut)
 {
 	char err_msg[1024];
 
@@ -584,7 +584,7 @@ lut_is_valid(char *lut_str, uint64_t lut)
 
 		time_t rawtime;
 		time(&rawtime);
-		struct tm *cur_tm = localtime(&rawtime);
+		struct tm* cur_tm = localtime(&rawtime);
 
 		char buf[255];
 		strftime(buf, sizeof(buf), "%b %d %Y %H:%M:%S", cur_tm);
@@ -599,7 +599,7 @@ lut_is_valid(char *lut_str, uint64_t lut)
 }
 
 static bool
-parse_lut(char* s, uint64_t *lut)
+parse_lut(char* s, uint64_t* lut)
 {
 	char lut_str[256];
 	memset(lut_str, 0, 256);
@@ -919,10 +919,10 @@ parse_pkey(tokenizer* tknzr, asql_value* value)
 }
 
 static bool
-parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
+parse_skey(tokenizer* tknzr, asql_where* where, asql_where **where2)
 {
 	// SECONDARY INDEX QUERY
-	if (!parse_name(tknzr->tok, ibname, false)) {
+	if (!parse_name(tknzr->tok, &where->ibname, false)) {
 		return false;
 	}
 
@@ -932,10 +932,47 @@ parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
 		if (parse_expression(tknzr, &where->beg) != 0) {
 			return false;
 		}
+
 		where->end = where->beg;
-		where->qtype = ASQL_QUERY_TYPE_EQUALITY;
-	}
-	else if (!strcasecmp(tknzr->tok, "BETWEEN")) { // Range Lookup
+		where->qtype = ASQL_QUERY_TYPE_EQUALITY;		
+
+		char* peek = peek_next_token(tknzr);
+		if (peek != NULL && !strcasecmp(peek, "LIMIT")) {
+			free(peek);
+			return true;
+		}
+		free(peek);
+
+		GET_NEXT_TOKEN_OR_RETURN(true);
+		if (strcasecmp(tknzr->tok, "AND"))
+		{
+			return false;
+		}
+
+		*where2 = malloc(sizeof(asql_where));
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (!parse_name(tknzr->tok, &(*where2)->ibname, false))
+		{
+			return false;
+		}
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (strcmp(tknzr->tok, "="))
+		{
+			return false;
+		}
+
+		GET_NEXT_TOKEN_OR_GOTO(filter_error);
+		if (parse_expression(tknzr, &(*where2)->beg) != 0)
+		{
+			return false;
+		}
+
+		(*where2)->end = (*where2)->beg;
+		(*where2)->qtype = ASQL_QUERY_TYPE_EQUALITY;
+
+	} else if (!strcasecmp(tknzr->tok, "BETWEEN")) { // Range Lookup
 		GET_NEXT_TOKEN_OR_GOTO(filter_error)
 		if (parse_expression(tknzr, &where->beg) != 0) {
 			return false;
@@ -980,6 +1017,13 @@ parse_skey(tokenizer* tknzr, asql_where* where, asql_name* ibname)
 	else {
 		return false;
 	}
+
+	char* peek = peek_next_token(tknzr);
+	if (peek != NULL && !strcasecmp(peek, "and")) {
+		free(peek);
+		return false;
+	}
+	free(peek);
 
 	return true;
 
@@ -1168,9 +1212,31 @@ parse_error:
 	return -1;
 }
 
+static bool
+parse_limit(tokenizer* tknzr, asql_value **value) 
+{
+	if (strcasecmp(tknzr->tok, "LIMIT")) {
+		return false;
+	}
 
-static aconfig*
-parse_query(tokenizer* tknzr, int type)
+	GET_NEXT_TOKEN_OR_RETURN(false);
+	
+	*value = malloc(sizeof(asql_value));
+
+	if (parse_expression(tknzr, *value)) {
+		asql_free_value(*value);
+		*value = NULL;
+		return false;
+	}
+
+	if ((*value)->type != AS_INTEGER) {
+		return false;
+	}
+
+	return true;
+}
+
+static aconfig* parse_query(tokenizer* tknzr, int type)
 {
 	asql_name ns = NULL;
 	asql_name set = NULL;
@@ -1180,6 +1246,7 @@ parse_query(tokenizer* tknzr, int type)
 	asql_name ibname = NULL;
 	as_vector* bnames = NULL;
 	as_vector* params = NULL;
+	asql_value* limit = NULL;
 
 	if (type == ASQL_OP_SELECT) {
 		GET_NEXT_TOKEN_OR_GOTO(ERROR)
@@ -1237,6 +1304,11 @@ parse_query(tokenizer* tknzr, int type)
 		get_next_token(tknzr);
 
 	// SCAN Operations
+	if (tknzr->tok && !strcasecmp(tknzr->tok, "LIMIT") && !parse_limit(tknzr, &limit))
+		goto ERROR;
+	if (limit)
+		get_next_token(tknzr);
+
 	if (!tknzr->tok) {
 		scan_config* s = malloc(sizeof(scan_config));
 		bzero(s, sizeof(scan_config));
@@ -1252,6 +1324,7 @@ parse_query(tokenizer* tknzr, int type)
 			s->u.udfname = udfname;
 			s->u.params = params;
 		}
+		s->limit = limit;
 		return (aconfig*)s;
 	}
 
@@ -1318,21 +1391,46 @@ parse_query(tokenizer* tknzr, int type)
 	}
 	s->itype = itype;
 
-	if (!parse_skey(tknzr, &s->where, &s->ibname)) {
-		destroy_aconfig((aconfig*)s);
+	if (!parse_skey(tknzr, &s->where, &s->where2)) {
+		get_next_token(tknzr);
+		
+		/*
+		 * If someone tried to type "BETWEEN a = 1 and b = 3 and . . ." or if 
+		 * there was an error parsing the double where clause like 
+		 * "a = 1 and b != 3" (!= not supported).
+		 */
+		if (tknzr->tok && ((!strcasecmp(tknzr->tok, "AND") && s->where.qtype != ASQL_QUERY_TYPE_NONE) || s->where2 != NULL)) {
+			fprintf(stderr, "Unsupported command format\n");
+			fprintf(stderr, "Double where clause only supports '=' expressions.\n");
+		} else {
+			predicting_parse_error(tknzr);
+			destroy_aconfig((aconfig*)s);
+		}
+		return NULL;
+	}
+
+	if ((s->itype && s->where2)) {
+		fprintf(stderr, "Unsupported command format\n");
+		fprintf(stderr, "\"IN <indextype>\" not supported with double where clause.\n");	
+	}
+
+	s->limit = limit;
+
+	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
+
+	// limit could have been set by previous attempts to parse hence the NULL check. 
+	// This is not the documented way of setting the limit but still possible.
+	if (s->limit == NULL && !parse_limit(tknzr, &s->limit))
+	{
 		predicting_parse_error(tknzr);
+		destroy_aconfig((aconfig*)s);
 		return NULL;
 	}
 
 	GET_NEXT_TOKEN_OR_RETURN((aconfig *)s;)
 
 ERROR:
-	if (!strcasecmp(tknzr->tok, "and") || !strcasecmp(tknzr->tok, "or")) {
-		fprintf(stderr, "Syntax error near token -  \'%s\' \n", tknzr->tok);
-		fprintf(stderr, "Only a single predicate is supported.\n");
-	} else {
-		predicting_parse_error(tknzr);
-	}
+	predicting_parse_error(tknzr);
 
 	if (ns) free(ns);
 	if (set) free(set);
@@ -1350,6 +1448,9 @@ ERROR:
 		destroy_vector(params, false);
 		as_vector_destroy(params);
 	}
+
+	asql_free_value(limit);
+
 	return NULL;
 }
 

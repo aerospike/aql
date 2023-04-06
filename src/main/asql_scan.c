@@ -87,6 +87,10 @@ scan_select(asql_config* c, scan_config* s)
 	scan_policy.durable_delete = c->durable_delete;
 	scan_policy.records_per_second = (uint32_t)c->scan_records_per_second;
 
+	if (s->limit) {
+		scan_policy.max_records = s->limit->u.i64;
+	}
+
 	if (strlen(s->ns) >= AS_NAMESPACE_MAX_SIZE) {
 		char err_msg[1024];
 		snprintf(err_msg, 1023, "Namespace name is too long: '%s'", s->ns);
