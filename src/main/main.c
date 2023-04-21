@@ -350,7 +350,6 @@ asql_shutdown(asql_config* c)
 	}
 
 	aerospike_destroy(g_aerospike);
-	destroy_asqlconfig(c);
 	fprintf(stdout, "\n");
 }
 
@@ -415,6 +414,7 @@ password_env(const char *var, char **ptr)
 		return false;
 	}
 
+	free(*ptr);
 	*ptr = strdup(pw);
 	return true;
 }
@@ -459,6 +459,7 @@ password_file(const char *path, char **ptr)
 		return false;
 	}
 
+	free(*ptr);
 	*ptr = strdup(pw);
 	return true;
 }

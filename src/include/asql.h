@@ -192,4 +192,3 @@ extern aerospike* g_aerospike;
 bool parse_and_run(asql_config* c, char* cmd);
 bool parse_and_run_colon_delim(asql_config* c, char* cmd);
 const char* map_enum_to_string(map_enum_string map[], int value);
-void destroy_asqlconfig(asql_config* ac);

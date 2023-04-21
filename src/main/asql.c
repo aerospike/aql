@@ -149,14 +149,6 @@ destroy_aconfig(aconfig* ac)
 	return 0;
 }
 
-void
-destroy_asqlconfig(asql_config* ac)
-{
-	if (ac->base.password) free(ac->base.password);
-	if (ac->base.tls.keyfile_pw) free(ac->base.tls.keyfile_pw);
-}
-	
-
 int
 run(void* o)
 {
