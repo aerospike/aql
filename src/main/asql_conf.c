@@ -613,6 +613,10 @@ config_free(asql_config* conf)
 		free(base->user);
 	}
 
+	if (base->password) {
+		free(base->password);
+	}
+
 	// Tls ownership is passed to as_config.tls so that would
 	// free it up under aerospike_destroy.
 	if (base->lua_userpath) {
