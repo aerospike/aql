@@ -41,10 +41,12 @@ jobs:
         run: | 
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
-      - name: Print version
+      - name: Print and get version
         working-directory: ${{ steps.working-dir.outputs.value }}
+        id: tag
         run: |
           git describe --tags --always
+          echo "tag=$(git describe --tags --always)" >> $GITHUB_OUTPUT
       - uses: kenchan0130/actions-system-info@master
         id: system-info
       - name: Cache Aql
@@ -56,7 +58,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/target
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ hashFiles(format('{0}/**/*.c', steps.working-dir.outputs.value)) }}-${{ hashfiles(format('{0}/**/*.h', steps.working-dir.outputs.value)) }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ steps.tag.outputs.tag }}
       - name: Download C Client Deps
         run: |
           brew install automake
