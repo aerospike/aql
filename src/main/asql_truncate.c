@@ -44,6 +44,7 @@ asql_truncate(asql_config* c, aconfig* ac)
 	as_error err;
 
 	truncate_config* tc = (truncate_config*)ac;
+	void* view = g_renderer->view_new(NULL);
 
 	as_policy_info info_policy;
 	as_policy_info_init(&info_policy);
@@ -54,12 +55,15 @@ asql_truncate(asql_config* c, aconfig* ac)
 
 	int rv = 0;
 	if (status == AEROSPIKE_OK) {
-		g_renderer->render_ok("", NULL);
+		g_renderer->render_ok("", view);
 	}
 	else {
 		rv = -1;
-		g_renderer->render_error(err.code, err.message, NULL);
+		g_renderer->render_error(err.code, err.message, view);
 	}
+	
+	g_renderer->render_error(1, "Warning: The TRUNCATE command has been deprecated and will be removed in the next major release of aql. Use asadm instead.\n", view);
+	g_renderer->view_destroy(view);
 
 	return rv;
 }
