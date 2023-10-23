@@ -351,11 +351,13 @@ pair_parser(as_hashmap* map, const char* req, const char* pair)
 	char* delim = strstr(name, "=");
 	char* value = NULL;
 
-	if (delim) {
-		delim[0] = '\0';
-		value = delim + 1;
+	if (delim == NULL) {
+		return false;
 	}
 
+	delim[0] = '\0';
+	value = delim + 1;
+	
 	name = strdup(name);
 	value = strdup(value);
 
