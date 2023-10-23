@@ -31,7 +31,6 @@
 #include <asql_print.h>
 #include <asql_query.h>
 #include <asql_scan.h>
-#include <asql_truncate.h>
 
 
 //==========================================================
@@ -70,7 +69,6 @@ static void destroy_skconfig(aconfig* ac);
 static void destroy_infoconfig(aconfig* ac);
 static void destroy_scanconfig(aconfig* ac);
 static void destroy_runfileconfig(aconfig* ac);
-static void destroy_truncateconfig(aconfig* ac);
 
 
 //=========================================================
@@ -83,14 +81,12 @@ const op_fn op_map[OP_MAX] = {
 	asql_info,
 	asql_scan,
 	runfile,
-	asql_truncate,
 };
 
 const parse_entry parse_table[ASQL_OP_MAX] = {
 	{ "EXPLAIN", aql_parse_explain },
 	{ "INSERT", aql_parse_insert },
 	{ "DELETE", aql_parse_delete },
-	{ "TRUNCATE", aql_parse_truncate },
 	{ "EXECUTE", aql_parse_execute },
 
 	{ "SELECT", aql_parse_select },
@@ -115,7 +111,6 @@ const destroy_fn destroy_table[OP_MAX] = {
 	destroy_infoconfig,
 	destroy_scanconfig,
 	destroy_runfileconfig,
-	destroy_truncateconfig,
 };
 
 
@@ -452,17 +447,6 @@ destroy_scanconfig(aconfig* ac)
 	destroy_udf_param(&s->u);
 	free(s->limit);
 	free(s);
-}
-
-static void
-destroy_truncateconfig(aconfig* ac)
-{
-	truncate_config* tc = (truncate_config*)ac;
-
-	if (tc->ns) free(tc->ns);
-	if (tc->set) free(tc->set);
-
-	free(tc);
 }
 
 static void

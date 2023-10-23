@@ -59,7 +59,6 @@ const print_entry print_table[ASQL_OP_MAX] = {
 	{ "EXPLAIN", print_query_help },
 	{ "INSERT", print_dml_help },
 	{ "DELETE", print_dml_help },
-	{ "TRUNCATE", print_dml_help },
 	{ "EXECUTE", print_dml_help },
 
 	{ "SELECT", print_query_help },
@@ -160,14 +159,12 @@ print_dml_help()
 	fprintf(stdout, "  DML\n");
 	fprintf(stdout, "      INSERT INTO <ns>[.<set>] (PK, <bins>) VALUES (<key>, <values>)\n");
 	fprintf(stdout, "      DELETE FROM <ns>[.<set>] WHERE PK = <key>\n");
-	fprintf(stdout, "      TRUNCATE <ns>[.<set>] [upto <LUT>] \n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "          <ns> is the namespace for the record.\n");
 	fprintf(stdout, "          <set> is the set name for the record.\n");
 	fprintf(stdout, "          <key> is the record's primary key.\n");
 	fprintf(stdout, "          <bins> is a comma-separated list of bin names.\n");
 	fprintf(stdout, "          <values> is comma-separated list of bin values, which may include type cast expressions. Set to NULL (case insensitive & w/o quotes) to delete the bin.\n");
-	fprintf(stdout, "          <LUT> is last update time upto which set or namespace needs to be truncated. LUT is either nanosecond since Unix epoch like 1513687224599000000 or in date string in format like \"Dec 19 2017 12:40:00\".\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "        Type Cast Expression Formats:\n");
 	fprintf(stdout, "      \n");
