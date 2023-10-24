@@ -33,7 +33,6 @@
 #include <asql_print.h>
 #include <asql_query.h>
 #include <asql_scan.h>
-#include <asql_truncate.h>
 
 #include "renderer/json_renderer.h"
 #include "renderer/no_renderer.h"
@@ -257,58 +256,6 @@ ERROR:
 	predicting_parse_error(tknzr);
 	if (ns) free(ns);
 	if (set) free(set);
-	return NULL;
-}
-
-aconfig*
-aql_parse_truncate(tokenizer* tknzr)
-{
-	GET_NEXT_TOKEN_OR_ERROR(NULL)
-
-	truncate_config* tc = malloc(sizeof(truncate_config));
-	memset(tc, 0, sizeof(truncate_config));
-
-	tc->type = TRUNCATE_OP;
-	tc->optype = ASQL_OP_TRUNCATE;
-
-	uint64_t lut = 0;
-
-	if (!parse_ns_and_set(tknzr, &tc->ns, &tc->set)) {
-		predicting_parse_error(tknzr);
-		goto truncate_error;
-	}
-
-	if (tc->set) {
-		GET_NEXT_TOKEN_OR_GOTO(truncate_end)
-	}
-
-	if (! tknzr->tok) {
-		goto truncate_end;
-	}
-
-	if (strcasecmp(tknzr->tok, "UPTO")) {
-		predicting_parse_error(tknzr);
-		goto truncate_error;
-	}
-
-	GET_NEXT_TOKEN_OR_GOTO(truncate_error)
-	if (! parse_lut(tknzr->tok, &lut)) {
-		g_renderer->render_error(-1, "Invalid lut, use format \"Dec 18 2017 09:53:20\" or 1513590800000000000.", NULL);
-		goto truncate_error;
-	}
-
-	if (lut) {
-		if (! lut_is_valid(tknzr->tok, lut)) {
-			goto truncate_error;
-		}
-		tc->lut = lut;
-	}
-
-truncate_end:
-	return (aconfig*)tc;
-
-truncate_error:
-	destroy_aconfig((aconfig*)tc);
 	return NULL;
 }
 
@@ -574,58 +521,6 @@ check_illegal_characters(char* s)
 	return false;
 }
 
-static bool
-lut_is_valid(char* lut_str, uint64_t lut)
-{
-	char err_msg[1024];
-
-	if ((lut <= CITRUSLEAF_EPOCH_NS)
-			|| (cf_clepoch_ms_from_utc_ns(lut) > cf_clepoch_milliseconds())) {
-
-		time_t rawtime;
-		time(&rawtime);
-		struct tm* cur_tm = localtime(&rawtime);
-
-		char buf[255];
-		strftime(buf, sizeof(buf), "%b %d %Y %H:%M:%S", cur_tm);
-
-		snprintf(err_msg, 1023, "LUT %s out of range. Choose LUT greater than \"Jan 1 2010 00:00:00\" (1262304000000000000 ns) and less than current time \"%s\" (%"PRIu64" ns)",
-				lut_str, buf, cf_clock_getabsolute() * 1000 * 1000);
-		g_renderer->render_error(-1, err_msg, NULL);
-		return false;
-	}
-
-	return true;
-}
-
-static bool
-parse_lut(char* s, uint64_t* lut)
-{
-	char lut_str[256];
-	memset(lut_str, 0, 256);
-	char* endptr = 0;
-	uint64_t val = strtoul(s, &endptr, 0);
-
-	if (*endptr == 0) {
-		*lut = val;
-		return true;
-	}
-
-	struct tm lut_tm;
-	memset(&lut_tm, 0, sizeof(struct tm));
-	strncpy_and_strip_quotes(lut_str, s, strlen(s));
-	strptime(lut_str, "%b %d %Y %H:%M:%S", &lut_tm);
-
-	time_t t = mktime(&lut_tm);
-
-	if (t < 0) {
-		return false;
-	}
-
-	// return nano
-	*lut = 1000000000 * t;
-	return true;
-}
 
 static bool
 parse_name(char* s, asql_name* name, bool allow_empty)

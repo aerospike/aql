@@ -52,7 +52,6 @@ typedef enum {
 	INFO_OP,
 	SCAN_OP,
 	RUNFILE_OP,
-	TRUNCATE_OP,
 	OP_MAX = 6
 } atype;
 
@@ -60,7 +59,6 @@ typedef enum {
 	ASQL_OP_EXPLAIN = 0,
 	ASQL_OP_INSERT,
 	ASQL_OP_DELETE,
-	ASQL_OP_TRUNCATE,
 	ASQL_OP_EXECUTE,
 
 	ASQL_OP_SELECT,

@@ -30,7 +30,6 @@
 aconfig* aql_parse_insert(tokenizer* tknzr);
 aconfig* aql_parse_explain(tokenizer* tknzr);
 aconfig* aql_parse_delete(tokenizer* tknzr);
-aconfig* aql_parse_truncate(tokenizer* tknzr);
 aconfig* aql_parse_execute(tokenizer* tknzr);
 
 aconfig* aql_parse_select(tokenizer* tknzr);

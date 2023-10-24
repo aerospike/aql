@@ -133,7 +133,6 @@ OBJECTS += asql_print.o
 OBJECTS += asql_tokenizer.o
 OBJECTS += asql_query.o
 OBJECTS += asql_scan.o
-OBJECTS += asql_truncate.o
 OBJECTS += asql_value.o
 OBJECTS += asql_conf.o
 OBJECTS += json.o
