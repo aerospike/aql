@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2022 Aerospike, Inc.
+ * Copyright 2015-2023 Aerospike, Inc.
  *
  * Portions may be licensed to Aerospike, Inc. under one or more contributor
  * license agreements.
@@ -56,6 +56,7 @@ typedef struct info_obj_s {
 	parser_callback callback;
 	as_error error;
 	void* rview;
+	bool free_view;
 	void* udata;
 } info_obj;
 
@@ -69,12 +70,14 @@ static int udfput(asql_config* c, info_config* ic);
 static int udfremove(asql_config* c, info_config* ic);
 static int info_generic(asql_config* c, info_config* ic, info_obj* iobj);
 
-static info_obj* new_obj(parser_callback callback, void* udata);
+static info_obj* new_obj(parser_callback callback, void* udata, void* view);
 static void free_obj(info_obj* iobj);
 static int display_obj(info_obj* iobj, const char* success);
 static bool generic_cb(const as_error* err, const as_node* node, const char* req, char* res, void* udata);
 static bool render_response(info_obj* iobj, const as_error* err, const as_node* node, const char* req, char* res);
 static void generic_list_res_render(void* udata, const as_node* node, const char* req, char* res);
+static bool build_gte(as_string* a, as_string* b);
+static void bins_build_res_check(void* udata, const as_node* node, const char* req, char* res);
 static void bins_res_render(void* udata, const as_node* node, const char* req, char* res);
 static void udf_get_res_render(void* udata, const as_node* node, const char* req, char* res);
 static void list_udf_res_render(void* udata, const as_node* node, const char* req, char* res);
@@ -111,22 +114,35 @@ asql_info(asql_config* c, aconfig* ac)
 
 	if (strstr(ic->cmd, "namespaces") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
-		iobj = new_obj(generic_list_res_render, (void*)parsed_resp);
+		iobj = new_obj(generic_list_res_render, (void*)parsed_resp, NULL);
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "sets") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
-		iobj = new_obj(generic_list_res_render, (void*)parsed_resp);
+		iobj = new_obj(generic_list_res_render, (void*)parsed_resp, NULL);
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "bins") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
-		iobj = new_obj(bins_res_render, (void *)parsed_resp);
+		iobj = new_obj(bins_res_render, (void *)parsed_resp, NULL);
+		as_vector* build_resp = as_vector_create(sizeof(as_hashmap*), 1);
+		info_obj* build_iobj = new_obj(bins_build_res_check, (void *)build_resp, iobj->rview);
+		info_config* build_ic = asql_info_config_create(ic->optype, "build", NULL, false);
+		rv = info_generic(c, build_ic, build_iobj);
 		rv = info_generic(c, ic, iobj);
+
+		// If any server is 7.0 or later then set the error message.
+		if (build_iobj->error.code != AEROSPIKE_OK) {
+			as_error_set(&(iobj->error), build_iobj->error.code, build_iobj->error.message);
+		}
+
+		free_obj(build_iobj);
+		as_vector_destroy(build_resp);
+		free(build_ic);
 	}
 	else if (strstr(ic->cmd, "udf-list") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap*), 128);
-		iobj = new_obj(list_udf_res_render, (void *)parsed_resp);
+		iobj = new_obj(list_udf_res_render, (void *)parsed_resp, NULL);
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "udf-put") == ic->cmd) {
@@ -137,12 +153,12 @@ asql_info(asql_config* c, aconfig* ac)
 	}
 	else if (strstr(ic->cmd, "udf-get") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
-		iobj = new_obj(udf_get_res_render, (void *)parsed_resp);
+		iobj = new_obj(udf_get_res_render, (void *)parsed_resp, NULL);
 		rv = info_generic(c, ic, iobj);
 	}
 	else if (strstr(ic->cmd, "sindex-list") == ic->cmd) {
 		parsed_resp = as_vector_create(sizeof(as_hashmap *), 128);
-		iobj = new_obj(generic_list_res_render, (void *)parsed_resp);
+		iobj = new_obj(generic_list_res_render, (void *)parsed_resp, NULL);
 		rv = info_generic(c, ic, iobj);
 	}
 	else {
@@ -320,21 +336,32 @@ display_obj(info_obj* iobj, const char* success)
 }
 
 static info_obj*
-new_obj(parser_callback callback, void* udata)
+new_obj(parser_callback callback, void* udata, void* view)
 {
 	info_obj* iobj = (info_obj*)malloc(sizeof(info_obj));
 	iobj->callback = callback;
 	iobj->error.code = 0;
-	iobj->rview = g_renderer->view_new(NULL);
 	memset(iobj->error.message, 0, 1024);
 	iobj->udata = udata;
+
+	if (view) {
+		iobj->rview = view;
+		iobj->free_view = false;
+	} else {
+		iobj->rview = g_renderer->view_new(NULL);
+		iobj->free_view = true;
+	}
+
 	return iobj;
 }
 
 static void
 free_obj(info_obj* iobj)
 {
-	g_renderer->view_destroy(iobj->rview);
+	if (iobj->free_view) {
+		g_renderer->view_destroy(iobj->rview);
+	}
+	
 	free(iobj);
 }
 
@@ -360,6 +387,75 @@ list_render(info_obj* iobj, const as_node* node, const char* req, char* res)
 	as_vector_clear(node_result);
 
 	return;
+}
+
+static bool
+build_gte(as_string* a, as_string* b) {
+	char* a_str = as_string_tostring(a);
+	char* b_str = as_string_tostring(b);
+	char* a_save = NULL;
+	char* b_save = NULL;
+
+	char* a_val = strtok_r(a_str, ".-", &a_save);
+	char* b_val = strtok_r(b_str, ".-", &b_save);
+
+	while (a_val != NULL && b_val != NULL) {
+		int a_int = atoi(a_val);
+		int b_int = atoi(b_val);
+
+		if (!(a_int >= b_int)) {
+			return false;
+		}
+		
+		a_val = strtok_r(NULL, ".", &a_save);
+		b_val = strtok_r(NULL, ".", &b_save);
+	}
+
+	return true;
+}
+
+static void
+bins_build_res_check(void* udata, const as_node* node, const char* req, char* res)
+{
+	info_obj* iobj = (info_obj*)udata;
+	as_vector* parsed_resp = (as_vector*)iobj->udata;
+	list_res_parser(parsed_resp, node, req, res);
+	bool gte_70 = false;
+	
+	if (iobj->error.code != AEROSPIKE_OK) {
+		return;
+	}
+
+
+	for (int idx = 0; idx < parsed_resp->size; idx++) {
+		as_hashmap* map = as_vector_get_ptr(parsed_resp, idx);
+		as_string* build_key = as_string_new("build", false);
+		as_string* val = as_string_fromval(as_hashmap_get(map, build_key));
+		as_string* bin_rm_build = as_string_new(strdup("7.0.0.0"), true);
+
+		if (build_gte(val, bin_rm_build)) {
+			gte_70 = true;
+		}
+
+		as_string_destroy(build_key);
+		as_string_destroy(bin_rm_build);
+
+		if (gte_70) {
+			break;
+		}
+	}
+
+	if (gte_70) {
+		iobj->error.code=AEROSPIKE_ERR_CLIENT;
+		as_error_set(&(iobj->error), AEROSPIKE_ERR_CLIENT,  "Bins command not supported on server version >= 7.0.0.0. Unique bin name limits have been removed.");
+	}
+
+	for (int idx = 0; idx < parsed_resp->size; idx++) {
+		as_hashmap* map = as_vector_get_ptr(parsed_resp, idx);
+		as_hashmap_destroy(map);
+	}
+
+	as_vector_clear(parsed_resp);
 }
 
 static void
