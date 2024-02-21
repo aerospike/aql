@@ -79,13 +79,32 @@ const print_entry print_table[ASQL_OP_MAX] = {
 // Public API.
 //
 
-
-//TODO: update to reflect website's documentation
 void
 print_version()
 {
+	char* build = NULL;
+	char* version_cpy = strdup(AQL_VERSION);
+	char* token = strtok(version_cpy, "-");
+	char* version = token;
+
+	token = strtok(NULL, "-");
+
+	while (token != NULL) {
+		token = strtok(NULL, "-");
+
+		if (token != NULL) {
+			build = token;
+		}
+	}
+	
 	fprintf(stdout, "Aerospike Query Client\n");
-	fprintf(stdout, "Version %s\n", AQL_VERSION);
+	fprintf(stdout, "Version %s\n", version);
+
+	if (build != NULL) {
+		fprintf(stdout, "Build %s\n", build);
+	}
+
+	free(version_cpy);
 }
 
 void
