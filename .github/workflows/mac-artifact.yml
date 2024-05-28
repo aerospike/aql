@@ -22,8 +22,10 @@ jobs:
         include:
           - os: macos-11
             openssl-path: /usr/local/opt/openssl
+            target-dir: target/Darwin-x86_64/bin
           - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl
+            target-dir: target/Darwin-arm64/bin
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get checkout directory
@@ -96,7 +98,8 @@ jobs:
       - name: Sanity Test tools
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
-          cd target/Darwin-x86_64/bin
+          ls target
+          cd ${{ matrix.target-dir }}
           ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Set Upload Arch
         uses: haya14busa/action-cond@v1
