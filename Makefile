@@ -161,7 +161,7 @@ $(JANSSON_PATH)/Makefile: $(JANSSON_PATH)/configure
 	cd $(JANSSON_PATH) && ./configure
 
 $(JANSSON_PATH)/configure:
-	cd $(JANSSON_PATH) && autoreconf -i
+	cd $(JANSSON_PATH) && autoupdate && autoreconf -i
 
 .INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 

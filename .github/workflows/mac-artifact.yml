@@ -92,7 +92,6 @@ jobs:
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
-          autoupdate
           make OPENSSL_STATIC_PATH=${{ matrix.openssl-path }}/lib
       - name: Sanity Test tools
         working-directory: ${{ steps.working-dir.outputs.value }}
