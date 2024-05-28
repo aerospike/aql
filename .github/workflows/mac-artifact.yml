@@ -57,7 +57,7 @@ jobs:
         run: |
           git describe --tags --always
           echo "tag=$(git describe --tags --always)" >> $GITHUB_OUTPUT
-      - uses: kenchan0130/actions-system-info@master
+      - uses: kenchan0130/actions-system-info@v1.3.0
         id: system-info
       - name: Cache Aql
         uses: actions/cache@v3
@@ -102,7 +102,7 @@ jobs:
           cd ${{ matrix.target-dir }}
           ./aql -e "info" 2>&1 | grep "Failed to connect"
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
           path: ${{ steps.working-dir.outputs.value }}/${{ matrix.target-dir }}/aql
