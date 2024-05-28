@@ -101,15 +101,10 @@ jobs:
           ls target
           cd ${{ matrix.target-dir }}
           ./aql -e "info" 2>&1 | grep "Failed to connect"
-      - name: Set Upload Arch
-        uses: haya14busa/action-cond@v1
-        id: upload-arch
-        with:
-          cond: ${{ runner.arch == 'X64' }}
-          if_true: x86_64
-          if_false: aarch64
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
-          path: ${{ steps.working-dir.outputs.value }}/target/Darwin-${{ steps.upload-arch.outputs.value }}/bin/aql
+          path: ${{ steps.working-dir.outputs.value }}/${{ matrix.target-dir }}/aql
+          if-no-files-found: error 
+          
