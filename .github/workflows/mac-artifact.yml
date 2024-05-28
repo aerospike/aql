@@ -69,7 +69,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ steps.tag.outputs.tag }}
       - name: Download C Client Deps
         run: |
-          brew install automake
+          brew install automake libtool
       - name: Cache C Client
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
