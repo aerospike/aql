@@ -69,7 +69,7 @@ jobs:
       working-directory: ${{ steps.working-dir.outputs.value }}
       run: |
         git describe --tags --always
-    - uses: kenchan0130/actions-system-info@master
+    - uses: kenchan0130/actions-system-info@v1.3.0
       id: system-info
     - name: Download C Client Deps
       run: |
