@@ -347,6 +347,8 @@ json_to_val(json_t* j)
 		return (as_val*)json_number_to_integer(j);
 	if (json_is_real(j))
 		return (as_val*)as_double_new((double)json_real_value(j));
+	if (json_is_boolean(j))
+		return (as_val*)as_boolean_new(json_boolean_value(j));
 	return (as_val*) NULL; //&as_nil;
 }
 
