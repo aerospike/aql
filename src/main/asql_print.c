@@ -208,7 +208,7 @@ print_dml_help()
 	fprintf(stdout, "      Examples:\n");
 	fprintf(stdout, "      \n");
 	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', 123, 'abc', true)\n");
-	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3]}'), BOOL(1))\n");
+	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar, baz) VALUES ('key1', CAST('123' AS INT), JSON('{\"a\": 1.2, \"b\": [1, 2, 3], \"c\": true}'), BOOL(1))\n");
 	fprintf(stdout, "          INSERT INTO test.demo (PK, foo, bar) VALUES ('key1', LIST('[1, 2, 3]'), MAP('{\"a\": 1, \"b\": 2}'), CAST(0 as BOOL))\n");
 	fprintf(stdout, "          INSERT INTO test.demo (PK, gj) VALUES ('key1', GEOJSON('{\"type\": \"Point\", \"coordinates\": [123.4, -56.7]}'))\n");
 	fprintf(stdout, "          DELETE FROM test.demo WHERE PK = 'key1'\n");
