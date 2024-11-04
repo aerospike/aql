@@ -26,6 +26,9 @@ jobs:
           - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl
             target-dir: target/Darwin-arm64/bin
+          - os: macos-15
+            openssl-path: /opt/homebrew/opt/openssl
+            target-dir: target/Darwin-arm64/bin
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get checkout directory
