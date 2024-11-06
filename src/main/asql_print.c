@@ -66,12 +66,14 @@ const print_entry print_table[ASQL_OP_MAX] = {
 
 	{ "SHOW", print_admin_help },
 	{ "DESC", print_admin_help },
-
 	{ "RUN", print_admin_help },
 
 	{ "SET", print_setting_help },
 	{ "GET", print_setting_help },
 	{ "RESET", print_setting_help },
+
+	{ "REGISTER", print_ddl_help },
+	{ "REMOVE", print_ddl_help }
 };
 
 
