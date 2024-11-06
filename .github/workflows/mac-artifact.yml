@@ -71,7 +71,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/target
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ steps.tag.outputs.tag }}
+          key: ${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ steps.tag.outputs.tag }}
       - name: Download C Client Deps
         run: |
           brew install automake libtool
@@ -83,7 +83,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/c-client/**/*', steps.working-dir.outputs.value)) }}
+          key: ${{ matrix.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/c-client/**/*', steps.working-dir.outputs.value)) }}
       - name: Cache Jansson
         uses: actions/cache@v3
         if: steps.cache-aql.outputs.cache-hit != 'true'
@@ -92,7 +92,7 @@ jobs:
         with:
           path: |
             ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/jansson/**/*', steps.working-dir.outputs.value)) }}
+          key: ${{ matrix.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/jansson/**/*', steps.working-dir.outputs.value)) }}
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         working-directory: ${{ steps.working-dir.outputs.value }}
@@ -107,7 +107,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-aql
+          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ matrix.os }}-${{ steps.system-info.outputs.release }}-aql
           path: ${{ steps.working-dir.outputs.value }}/${{ matrix.target-dir }}/aql
           if-no-files-found: error 
           
