@@ -133,7 +133,7 @@ asql_info(asql_config* c, aconfig* ac)
 
 		// If any server is 7.0 or later then set the error message.
 		if (build_iobj->error.code != AEROSPIKE_OK) {
-			as_error_set(&(iobj->error), build_iobj->error.code, build_iobj->error.message);
+			as_error_set_message(&(iobj->error), build_iobj->error.code, build_iobj->error.message);
 		}
 
 		free_obj(build_iobj);
@@ -447,7 +447,7 @@ bins_build_res_check(void* udata, const as_node* node, const char* req, char* re
 
 	if (gte_70) {
 		iobj->error.code=AEROSPIKE_ERR_CLIENT;
-		as_error_set(&(iobj->error), AEROSPIKE_ERR_CLIENT,  "Bins command not supported on server version >= 7.0.0.0. Unique bin name limits have been removed.");
+		as_error_set_message(&(iobj->error), AEROSPIKE_ERR_CLIENT,  "Bins command not supported on server version >= 7.0.0.0. Unique bin name limits have been removed.");
 	}
 
 	for (int idx = 0; idx < parsed_resp->size; idx++) {

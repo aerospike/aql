@@ -102,8 +102,8 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 		}
 
 		as_partition_shm* asp = &pptable->partitions[partition_id];
-		uint32_t master_index = as_load_uint32(&asp->master);
-		uint32_t prole_index = as_load_uint32(&asp->prole);
+		uint32_t master_index = as_load_uint32(&asp->nodes[0]);
+		uint32_t prole_index = as_load_uint32(&asp->nodes[1]);
 
 		as_node** local_nodes = g_aerospike->cluster->shm_info->local_nodes;
 
@@ -123,8 +123,8 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 		}
 
 		as_partition *asp = &pptable->partitions[partition_id];
-		master = (as_node *)as_load_ptr(&asp->master);
-		prole = (as_node *)as_load_ptr(&asp->prole);
+		master = (as_node *)as_load_ptr(&asp->nodes[0]);
+		prole = (as_node *)as_load_ptr(&asp->nodes[1]);
 	}
 
 	as_hashmap_set(&m, (as_val *)as_string_new_strdup("MASTER NODE"),
