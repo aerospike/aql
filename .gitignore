@@ -16,6 +16,7 @@ modules/.*
 citrusleaf_v.spec
 aerospike_v.spec
 toml/libtoml.a
+build
 
 # Generated lexer code
 sql-lexer.c

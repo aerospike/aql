@@ -88,30 +88,14 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 	               (as_val*)as_integer_new(partition_id));
 
 
-	as_node *prole = NULL;
 	as_node *master = NULL;
+	as_node *prole_1 = NULL;  // REPLICA 1
+	as_node *prole_2 = NULL;  // REPLICA 2
 
 	if (g_aerospike->cluster->shm_info) {
-		as_cluster_shm* cluster_shm = g_aerospike->cluster->shm_info->cluster_shm;
-		as_partition_table_shm* pptable = as_shm_find_partition_table(cluster_shm, key->ns);
-
-		if (!pptable) {
-			g_renderer->render_error(AEROSPIKE_ERR_CLIENT, "Error getting partition table", NULL);
-			as_hashmap_destroy(&m);
-			return 1;
-		}
-
-		as_partition_shm* asp = &pptable->partitions[partition_id];
-		uint32_t master_index = as_load_uint32(&asp->nodes[0]);
-		uint32_t prole_index = as_load_uint32(&asp->nodes[1]);
-
-		as_node** local_nodes = g_aerospike->cluster->shm_info->local_nodes;
-
-		master = (as_node*)as_load_ptr(&local_nodes[master_index-1]);
-		if (prole_index) {
-			prole = (as_node*)as_load_ptr(&local_nodes[prole_index-1]);
-		}
-
+		g_renderer->render_error(-1, "Using shared memory (use_shm) is not supported by aql", NULL);
+		as_hashmap_destroy(&m);
+		return 1;
 	} else {
 		as_partition_tables* pptables = &g_aerospike->cluster->partition_tables;
 		as_partition_table* pptable = as_partition_tables_get(pptables, key->ns);
@@ -124,14 +108,28 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 
 		as_partition *asp = &pptable->partitions[partition_id];
 		master = (as_node *)as_load_ptr(&asp->nodes[0]);
-		prole = (as_node *)as_load_ptr(&asp->nodes[1]);
+		prole_1 = (as_node *)as_load_ptr(&asp->nodes[1]);
+		prole_2 = (as_node *)as_load_ptr(&asp->nodes[2]);
 	}
 
-	as_hashmap_set(&m, (as_val *)as_string_new_strdup("MASTER NODE"),
+	if (master) {
+		as_hashmap_set(&m, (as_val *)as_string_new_strdup("MASTER NODE"),
 				   (as_val *)as_string_new(master->name, false));
-	if (prole) {
+	}
+	
+	if (prole_1 && prole_2) {
+		size_t len1 = strlen(prole_1->name);
+		size_t len2 = strlen(prole_2->name);
+		char replica_nodes[len1 + len2 + 2];  // for comma and null terminator
+		snprintf(replica_nodes, sizeof(replica_nodes), "%s,%s", prole_1->name, prole_2->name);
+		as_hashmap_set(&m, (as_val *)as_string_new_strdup("REPLICA NODES"),
+						(as_val *)as_string_new_strdup(replica_nodes));
+	} else if (prole_1) {
 		as_hashmap_set(&m, (as_val *)as_string_new_strdup("REPLICA NODE"),
-					   (as_val *)as_string_new(prole->name, false));
+					   (as_val *)as_string_new(prole_1->name, false));
+	} else if (prole_2) {
+		as_hashmap_set(&m, (as_val *)as_string_new_strdup("REPLICA NODE"),
+					   (as_val *)as_string_new(prole_2->name, false));
 	}
 
 	as_hashmap_set(&m, (as_val*)as_string_new_strdup("KEY_TYPE"),
