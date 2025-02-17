@@ -93,7 +93,7 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 	as_node *prole_2 = NULL;  // REPLICA 2
 
 	if (g_aerospike->cluster->shm_info) {
-		g_renderer->render_error(-1, "Using shared memory (use_shm) is not supported by aql", NULL);
+		g_renderer->render_error(AEROSPIKE_ERR_CLIENT, "Using shared memory (use_shm) is not supported by aql", NULL);
 		as_hashmap_destroy(&m);
 		return 1;
 	} else {
