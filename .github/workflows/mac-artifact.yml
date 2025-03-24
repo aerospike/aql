@@ -2,7 +2,7 @@ name: Mac Artifact
 
 on:
   repository_dispatch:
-    types: mac-build
+    types: [mac-build]
   push:
     branches: [actionsHub, main, "*-bugfix"]
   pull_request:
