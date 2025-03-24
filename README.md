@@ -29,8 +29,13 @@ sudo apt-get install libreadline6 libreadline-dev flex
 yum -y install readline readline-devel flex which
 ```
 
+### MacOS
+```
+brew install automake libtool
+```
+
 ### C client Dependencies
-* Install the prerequisites of the C client, as described in its repo's README.
+* Install the prerequisites of the C client, as described in its [repo's README](https://github.com/aerospike/aerospike-client-c?tab=readme-ov-file#build-prerequisites).
 
 ## Building AQL
 ```
