@@ -1,4 +1,4 @@
-# Aerospike Quick Look
+# Aerospike Quick Look (Deprecated)
 
 A SQL-like command-line interface (aql) used to browse data stored in Aerospike database.
 The aql tool is deprecated and scheduled to be removed from the Aerospike tools package.  No new features will be added to aql. Data browsing alternatives include the [Aerospike JDBC driver](https://github.com/aerospike/aerospike-jdbc).
