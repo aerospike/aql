@@ -51,8 +51,6 @@ void strncpy_and_strip_quotes(char* to, const char* from, size_t size);
 static bool is_quoted_literal(char* s);
 static bool check_illegal_characters(char* s);
 
-static bool lut_is_valid(char* s, uint64_t lut);
-static bool parse_lut(char* s, uint64_t* lut);
 static bool parse_name(char* s, asql_name* name, bool allow_empty);
 static int parse_expression(tokenizer* tknzr, asql_value* value);
 static int parse_value(char* s, asql_value* value);

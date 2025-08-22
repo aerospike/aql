@@ -73,6 +73,7 @@ static bool gError = false;
 %START SQUOTE DQUOTE
 
 %option noyywrap
+%option noinput
 
 %%
 
@@ -202,7 +203,7 @@ int as_sql_lexer(char *input, char **token, bool peek)
 
    if (done) {
       if (token) {
-        *token = '\0';
+        *token = NULL;
       }
       return ERROR;
    }
@@ -223,13 +224,13 @@ int as_sql_lexer(char *input, char **token, bool peek)
       rv = OK;
    } else if (gError) {
       if (token) {
-         *token = '\0';
+         *token = NULL;
       }
       done = true;
       rv = ERROR;
    } else {
       if (token) {
-         *token = '\0';
+         *token = NULL;
       }
       done = true;
       rv = DONE;
