@@ -72,3 +72,4 @@ xcuserdata
 *.xccheckout
 *.swp
 *~.nib
+.cache
