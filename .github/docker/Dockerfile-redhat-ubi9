@@ -7,7 +7,7 @@ ADD .github/docker/install_deps.sh /tmp/install_deps.sh
 
 RUN source /tmp/install_deps.sh && install_deps_redhat-ubi9
 ADD --chown=build:build . /opt/aql
-USER build
+#USER build
 
 WORKDIR /opt/aql
 ENTRYPOINT ["/opt/aql/.github/docker/entrypoint.sh"]
