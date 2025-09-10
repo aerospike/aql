@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 VERSION=$(git rev-parse HEAD | cut -c -8)
-BUILD_DEPS_REDHAT="readline which autoconf" #readline-devel flex
+BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
 function install_deps_debian11() {
