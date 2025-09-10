@@ -2,8 +2,6 @@ FROM ubuntu:24.04
 SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG DEBUG=0
-ENV DEBUG=${DEBUG}
 RUN useradd -u 9001 -m build
 
 RUN apt -y update
