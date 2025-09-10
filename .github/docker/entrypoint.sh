@@ -14,13 +14,13 @@ fi
 
 
 function build_container() {
-  docker build -t asadmin-pkg-builder-"$1"-"$VERSION" -f .github/docker/Dockerfile-"$1" .
+  docker build -t aql-pkg-builder-"$1"-"$VERSION" -f .github/docker/Dockerfile-"$1" .
 }
 
 
 function execute_build_image() {
   export BUILD_DISTRO="$1"
-  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output asadmin-pkg-builder-"$BUILD_DISTRO"-"$VERSION"
+  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output aql-pkg-builder-"$BUILD_DISTRO"-"$VERSION"
   ls -laht ../dist
 }
 

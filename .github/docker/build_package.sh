@@ -5,7 +5,7 @@ function build_packages(){
     return
   fi
   cd "$GIT_DIR"
-  make make
+  make
   cd $PKG_DIR
   echo "building package for $BUILD_DISTRO"
 
@@ -20,5 +20,5 @@ function build_packages(){
   fi
 
   mkdir -p /tmp/output/$ENV_DISTRO
-  cp -a $PKG_DIR/target/"$(uname -s)-$(uname -m)"* /tmp/output/$ENV_DISTRO
+  cp -a $PKG_DIR/target/* /tmp/output/$ENV_DISTRO
 }

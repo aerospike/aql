@@ -1,18 +1,18 @@
 # Variables required for this Makefile
 PKG_DIR = $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-TOP_DIR = $(PKG_DIR)/../build/bin
+TOP_DIR = $(PKG_DIR)/../target/"$(shell uname -s)-$(shell uname -m)"
 BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
-# asadmin doesn't support configs yet but fpm complains without this
+# aql doesn't support configs yet but fpm complains without this
 CONFIG_DIR = /etc/aerospike
 
 # Package variables
-NAME = "asadmin"
+NAME = "aql"
 VERSION = $(shell git describe --tags --always)
 MAINTAINER = "Aerospike"
-DESCRIPTION = "Asadmin, a tool for managing Aerospike database."
+DESCRIPTION = "AQL, a tool for interacting with the Aerospike database."
 LICENSE = "Apache License 2.0"
-URL = "https://github.com/aerospike/aerospike-admin"
+URL = "https://github.com/aerospike/aql"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
 
@@ -34,7 +34,7 @@ deb: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/asadmin_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
+		--package $(TARGET_DIR)/aql_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
 
 .PHONY: rpm
 rpm: prep
@@ -50,7 +50,7 @@ rpm: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/asadmin-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/aql-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
 tar: prep
@@ -66,18 +66,16 @@ tar: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/asadmin-$(BUILD_DISTRO)-$(VERSION)-$(ARCH).tar
+		--package $(TARGET_DIR)/aql-$(BUILD_DISTRO)-$(VERSION)-$(ARCH).tar
 
 .PHONY: prep
 prep:
 	install -d $(TARGET_DIR)
 	install -d $(BUILD_DIR)/$(CONFIG_DIR)
 	install -d $(BUILD_DIR)/opt/aerospike/bin
-	install -pm 755 $(TOP_DIR)/asadm $(BUILD_DIR)/opt/aerospike/bin
-	install -pm 755 $(TOP_DIR)/asinfo $(BUILD_DIR)/opt/aerospike/bin
+	install -pm 755 $(TOP_DIR)/bin/aql $(BUILD_DIR)/opt/aerospike/bin
 	install -d $(BUILD_DIR)/usr/bin
-	ln -sf /opt/aerospike/bin/asadm $(BUILD_DIR)/usr/bin/asadm
-	ln -sf /opt/aerospike/bin/asinfo $(BUILD_DIR)/usr/bin/asinfo
+	ln -sf /opt/aerospike/bin/aql $(BUILD_DIR)/usr/bin/aql
 
 .PHONY: clean
 clean:
