@@ -10,7 +10,6 @@ ADD .github/docker/install_deps.sh /tmp/install_deps.sh
 
 RUN source /tmp/install_deps.sh && install_deps_ubuntu24.04
 
-RUN if [[ $DEBUG -ne 0 ]]; then apt -y clean && rm -rf /var/lib/apt/lists/*; fi
 
 ADD --chown=build:build . /opt/aql
 WORKDIR /opt/aql
