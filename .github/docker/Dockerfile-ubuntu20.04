@@ -12,6 +12,6 @@ RUN source /tmp/install_deps.sh && install_deps_ubuntu20.04
 
 ADD --chown=build:build . /opt/aql
 WORKDIR /opt/aql
-#USER build
+USER build
 ENTRYPOINT ["/opt/aql/.github/docker/entrypoint.sh"]
 CMD ["-b"]

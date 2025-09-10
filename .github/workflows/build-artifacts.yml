@@ -14,7 +14,7 @@ jobs:
       project: database
       build-name: aerospike-admin
       build-version: v1.0.0
-      build-script: set -x && cd local && git checkout ${{ github.ref_name }} && git submodule update --init --recursive && .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && find ../dist
+      build-script: set -x && chmod o+rw dist &&  cd local && git checkout ${{ github.ref_name }} && git submodule update --init --recursive && .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && find ../dist
       artifact-directory: dist
       artifact-name: unsigned-artifacts-${{ matrix.distro }}
       retention-days: 7
