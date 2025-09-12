@@ -76,8 +76,8 @@ function install_deps_ubuntu24.04() {
 
 function install_deps_redhat-ubi9() {
   #todo redhat ubi9 does not have flex or readline-devel available in the yum repos
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/x86_64/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/x86_64/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
 
   dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync
   curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
