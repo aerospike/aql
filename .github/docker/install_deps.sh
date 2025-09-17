@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-VERSION=$(git rev-parse HEAD | cut -c -8)
+
 BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
