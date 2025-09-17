@@ -142,10 +142,10 @@ function install_deps_ubuntu24.04() {
 
 
 function install_deps_redhat-el8() {
-  #todo redhat el9 does not have flex or readline-devel available in the yum repos
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
-  dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync
+  #todo redhat el8 does not have flex or readline-devel available in the yum repos
+  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
+  yum install -y https://rpmfind.net/linux/almalinux/8.10/AppStream/$(uname -m)/os/Packages/flex-2.6.1-9.el8.$(uname -m).rpm
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
@@ -160,11 +160,14 @@ function install_deps_redhat-el8() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+  dnf install -y gcc make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
                       sqlite sqlite-devel sqlite-libs
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  asdf exec python -m pip install pipenv
   gem install fpm
 }
 
