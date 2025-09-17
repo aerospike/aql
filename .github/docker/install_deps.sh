@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 VERSION=$(git rev-parse HEAD | cut -c -8)
 BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
+BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
 function install_deps_debian11() {
@@ -50,8 +51,10 @@ function install_deps_debian12() {
 
 
 function install_deps_debian13() {
-  apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
-                 lzma-dev libffi-dev
+  apt -y install $BUILD_DEPS_DEBIAN gcc-13 g++-13 ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
+                 liblzma-dev libffi-dev
+  update-alternatives --install /usr/bin/gcc gcc $(which gcc-13) 10
+  update-alternatives --install /usr/bin/g++ g++ $(which g++-13) 10
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
       mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
@@ -137,11 +140,66 @@ function install_deps_ubuntu24.04() {
   gem install fpm
 }
 
-function install_deps_redhat-ubi9() {
-  #todo redhat ubi9 does not have flex or readline-devel available in the yum repos
+
+function install_deps_redhat-el8() {
+  #todo redhat el9 does not have flex or readline-devel available in the yum repos
   yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
   yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
   dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync
+
+  if [ "$(uname -m)" = "x86_64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  elif [ "$(uname -m)" = "aarch64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+  else
+      echo "unknown arch $(uname -m)"
+      exit 1
+  fi
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                      sqlite sqlite-devel sqlite-libs
+  asdf install python 3.10.18
+  asdf set python 3.10.18
+  asdf exec pip install pipenv
+  gem install fpm
+}
+
+function install_deps_redhat-el9() {
+  #todo redhat el9 does not have flex or readline-devel available in the yum repos
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
+  dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync
+
+  if [ "$(uname -m)" = "x86_64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  elif [ "$(uname -m)" = "aarch64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+  else
+      echo "unknown arch $(uname -m)"
+      exit 1
+  fi
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                      sqlite sqlite-devel sqlite-libs
+  asdf install python 3.10.18
+  asdf set python 3.10.18
+  asdf exec pip install pipenv
+  gem install fpm
+}
+
+
+
+function install_deps_amazon-2023() {
+
+  dnf -y install $BUILD_DEPS_AMAZON ruby rpmdevtools make git python3 python3-pip rsync
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
