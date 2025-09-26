@@ -130,7 +130,7 @@ jobs:
       artifactory-url: https://aerospike.jfrog.io
       artifactory-oidc-provider-name: database-gh-aerospike
       artifactory-oidc-audience: database-gh-aerospike
-      artifact-name: aql-${{ github.ref_name }}-
+      artifact-name: ${{ matrix.os }}-aql
       retention-days: 1
       dry-run: false
 
