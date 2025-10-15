@@ -4,7 +4,8 @@ BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
-READLINE_VERSION="8.2"
+EL10_READLINE_VERSION="8.2"
+EL8_READLINE_VERSION="7.0"
 FLEX_VERSION="2.6.4"
 
 function install_deps_debian11() {
@@ -151,9 +152,9 @@ function install_deps_redhat-el8() {
   gem install --no-document fpm
 
   # install readline-devel from source
-  wget http://ftp.gnu.org/gnu/readline/readline-${READLINE_VERSION}.tar.gz && \
-  tar -xzf readline-${READLINE_VERSION}.tar.gz && \
-  cd readline-${READLINE_VERSION} && \
+  wget http://ftp.gnu.org/gnu/readline/readline-${EL8_READLINE_VERSION}.tar.gz && \
+  tar -xzf readline-${EL8_READLINE_VERSION}.tar.gz && \
+  cd readline-${EL8_READLINE_VERSION} && \
   ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
   make SHLIB_LIBS="-lncurses -ltinfo" && \
   make install
@@ -220,9 +221,9 @@ function install_deps_redhat-el9() {
 
 function install_deps_redhat-el10() {
   # install readline-devel from source
-  wget http://ftp.gnu.org/gnu/readline/readline-${READLINE_VERSION}.tar.gz && \
-  tar -xzf readline-${READLINE_VERSION}.tar.gz && \
-  cd readline-${READLINE_VERSION} && \
+  wget http://ftp.gnu.org/gnu/readline/readline-${EL10_READLINE_VERSION}.tar.gz && \
+  tar -xzf readline-${EL10_READLINE_VERSION}.tar.gz && \
+  cd readline-${EL10_READLINE_VERSION} && \
   ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
   make SHLIB_LIBS="-lncurses -ltinfo" && \
   make install
