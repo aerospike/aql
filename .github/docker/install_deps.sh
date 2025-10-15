@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-BUILD_DEPS_REDHAT="readline which autoconf libtool readline-devel flex"
+BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
@@ -168,7 +168,10 @@ function install_deps_redhat-el8() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec python -m pip install pipenv
-  gem install fpm
+  # install fpm
+  dnf module enable -y ruby:2.7
+  dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
+  gem install --no-document fpm
 }
 
 function install_deps_redhat-el9() {
@@ -199,7 +202,11 @@ function install_deps_redhat-el9() {
 }
 
 function install_deps_redhat-el10() {
-  dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools m4 git python3 python3-pip rsync \
+  #todo redhat el9 does not have flex or readline-devel available in the yum repos
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
+  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
+
+  dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools git python3 python3-pip rsync \
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
