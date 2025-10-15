@@ -145,9 +145,27 @@ function install_deps_ubuntu24.04() {
 
 
 function install_deps_redhat-el8() {
-  #todo redhat el8 does not have flex or readline-devel available in the yum repos
-  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
-  yum install -y https://rpmfind.net/linux/almalinux/8.10/AppStream/$(uname -m)/os/Packages/flex-2.6.1-9.el8.$(uname -m).rpm
+  # install fpm
+  dnf module enable -y ruby:2.7
+  dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
+  gem install --no-document fpm
+
+  # install readline-devel from source
+  wget http://ftp.gnu.org/gnu/readline/readline-${READLINE_VERSION}.tar.gz && \
+  tar -xzf readline-${READLINE_VERSION}.tar.gz && \
+  cd readline-${READLINE_VERSION} && \
+  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
+  make SHLIB_LIBS="-lncurses -ltinfo" && \
+  make install
+  # install flex / lex
+  wget https://github.com/westes/flex/releases/download/v${FLEX_VERSION}/flex-${FLEX_VERSION}.tar.gz && \
+  tar -xvzf flex-${FLEX_VERSION}.tar.gz && \
+  cd flex-${FLEX_VERSION} && \
+  ./configure --prefix=/usr && \
+  make -j$(nproc) && \
+  make install && \
+  ln -s /usr/bin/flex /usr/bin/lex
+
   dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync
 
   if [ "$(uname -m)" = "x86_64" ]; then
@@ -171,10 +189,6 @@ function install_deps_redhat-el8() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec python -m pip install pipenv
-  # install fpm
-  dnf module enable -y ruby:2.7
-  dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
-  gem install --no-document fpm
 }
 
 function install_deps_redhat-el9() {
