@@ -168,7 +168,7 @@ function install_deps_redhat-el8() {
   ln -s /usr/bin/flex /usr/bin/lex
 
   dnf config-manager --set-enabled ubi-8-codeready-builder 
-  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync readline-devel ncurses-devel
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync libedit-devel ncurses-devel
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
