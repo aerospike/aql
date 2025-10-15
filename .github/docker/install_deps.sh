@@ -152,12 +152,12 @@ function install_deps_redhat-el8() {
   gem install --no-document fpm
 
   # install readline-devel from source
-  wget http://ftp.gnu.org/gnu/readline/readline-${EL8_READLINE_VERSION}.tar.gz && \
-  tar -xzf readline-${EL8_READLINE_VERSION}.tar.gz && \
-  cd readline-${EL8_READLINE_VERSION} && \
-  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
-  make SHLIB_LIBS="-lncurses -ltinfo" && \
-  make install
+#  wget http://ftp.gnu.org/gnu/readline/readline-${EL8_READLINE_VERSION}.tar.gz && \
+#  tar -xzf readline-${EL8_READLINE_VERSION}.tar.gz && \
+#  cd readline-${EL8_READLINE_VERSION} && \
+#  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
+#  make SHLIB_LIBS="-lncurses -ltinfo" && \
+#  make install
   # install flex / lex
   wget https://github.com/westes/flex/releases/download/v${FLEX_VERSION}/flex-${FLEX_VERSION}.tar.gz && \
   tar -xvzf flex-${FLEX_VERSION}.tar.gz && \
@@ -167,7 +167,8 @@ function install_deps_redhat-el8() {
   make install && \
   ln -s /usr/bin/flex /usr/bin/lex
 
-  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync ncurses-devel
+  dnf config-manager --set-enabled ubi-8-codeready-builder 
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync readline-devel ncurses-devel
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
