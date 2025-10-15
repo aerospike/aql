@@ -4,6 +4,9 @@ BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
+READLINE_VERSION="8.2"
+FLEX_VERSION="2.6.4"
+
 function install_deps_debian11() {
   apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma \
                  lzma-dev  libffi-dev
@@ -209,6 +212,14 @@ function install_deps_redhat-el10() {
   ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
   make SHLIB_LIBS="-lncurses -ltinfo" && \
   make install
+  # install flex / lex
+  wget https://github.com/westes/flex/releases/download/v${FLEX_VERSION}/flex-${FLEX_VERSION}.tar.gz && \
+  tar -xvzf flex-${FLEX_VERSION}.tar.gz && \
+  cd flex-${FLEX_VERSION} && \
+  ./configure --prefix=/usr && \
+  make -j$(nproc) && \
+  make install && \
+  ln -s /usr/bin/flex /usr/bin/lex
 
   dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools git python3 python3-pip rsync \
 
