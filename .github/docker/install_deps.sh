@@ -202,9 +202,13 @@ function install_deps_redhat-el9() {
 }
 
 function install_deps_redhat-el10() {
-  #todo redhat el9 does not have flex or readline-devel available in the yum repos
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/readline-devel-8.1-4.el9."$(uname -m)".rpm
-  yum install -y https://rpmfind.net/linux/centos-stream/9-stream/AppStream/$(uname -m)/os/Packages/flex-2.6.4-9.el9."$(uname -m)".rpm
+  # install readline-devel from source
+  wget http://ftp.gnu.org/gnu/readline/readline-${READLINE_VERSION}.tar.gz && \
+  tar -xzf readline-${READLINE_VERSION}.tar.gz && \
+  cd readline-${READLINE_VERSION} && \
+  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
+  make SHLIB_LIBS="-lncurses -ltinfo" && \
+  make install
 
   dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools git python3 python3-pip rsync \
 
