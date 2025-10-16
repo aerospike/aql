@@ -17,13 +17,13 @@ fi
 
 
 function build_container() {
-  docker build --progress=plain -t asbackup-pkg-builder-"$1"-"$(git rev-parse HEAD | cut -c -8)" -f .github/docker/Dockerfile-"$1" .
+  docker build --progress=plain -t aql-pkg-builder-"$1"-"$(git rev-parse HEAD | cut -c -8)" -f .github/docker/Dockerfile-"$1" .
 }
 
 
 function execute_build_image() {
   export BUILD_DISTRO="$1"
-  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output asbackup-pkg-builder-"$BUILD_DISTRO"-"$(git rev-parse HEAD | cut -c -8)"
+  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output aql-pkg-builder-"$BUILD_DISTRO"-"$(git rev-parse HEAD | cut -c -8)"
   ls -laht ../dist
 }
 

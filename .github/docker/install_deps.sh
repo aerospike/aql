@@ -24,7 +24,7 @@ function install_deps_debian11() {
   asdf set python 3.10.18
   /root/.asdf/installs/python/3.10.18/bin/python3 -m pip install pipenv
   install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/local/bin/pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 function install_deps_debian12() {
@@ -46,7 +46,7 @@ function install_deps_debian12() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install --break-system-packages pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 
@@ -71,7 +71,7 @@ function install_deps_debian13() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install --break-system-packages pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 function install_deps_ubuntu20.04() {
@@ -93,7 +93,7 @@ function install_deps_ubuntu20.04() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 function install_deps_ubuntu22.04() {
@@ -115,7 +115,7 @@ function install_deps_ubuntu22.04() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 function install_deps_ubuntu24.04() {
@@ -137,7 +137,7 @@ function install_deps_ubuntu24.04() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install --break-system-packages pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 
@@ -169,7 +169,7 @@ function install_deps_redhat-el8() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec python -m pip install pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 function install_deps_redhat-el9() {
@@ -196,7 +196,7 @@ function install_deps_redhat-el9() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
 
 
@@ -223,5 +223,5 @@ function install_deps_amazon-2023() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
-  gem install fpm
+  gem install fpm -v 1.17.0
 }
