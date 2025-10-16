@@ -142,10 +142,18 @@ function install_deps_ubuntu24.04() {
 
 
 function install_deps_redhat-el8() {
-  #todo redhat el8 does not have flex or readline-devel available in the yum repos
-  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
+
+#  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
   yum install -y https://rpmfind.net/linux/almalinux/8.10/AppStream/$(uname -m)/os/Packages/flex-2.6.1-9.el8.$(uname -m).rpm
   dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync
+  cd /opt
+  wget  http://git.savannah.gnu.org/cgit/readline.git/snapshot/readline-master.tar.gz
+  tar -zxvf readline-master.tar.gz
+  cd readline-master
+  ./configure
+  make
+  make install
+
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
