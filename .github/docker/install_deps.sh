@@ -145,7 +145,7 @@ function install_deps_redhat-el8() {
 
 #  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
   yum install -y https://rpmfind.net/linux/almalinux/8.10/AppStream/$(uname -m)/os/Packages/flex-2.6.1-9.el8.$(uname -m).rpm
-  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync wget
   cd /opt
   wget  http://git.savannah.gnu.org/cgit/readline.git/snapshot/readline-master.tar.gz
   tar -zxvf readline-master.tar.gz
