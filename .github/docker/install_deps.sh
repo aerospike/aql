@@ -179,7 +179,7 @@ function install_deps_redhat-el8() {
   gem install fpm
 }
 
-function install_deps_redhat-el8() {
+##function install_deps_redhat-el8() {
   # install fpm
 ##  dnf module enable -y ruby:2.7
 ##  dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
