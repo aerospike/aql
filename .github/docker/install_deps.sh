@@ -144,31 +144,16 @@ function install_deps_ubuntu24.04() {
   gem install fpm
 }
 
-
 function install_deps_redhat-el8() {
   # install fpm
   dnf module enable -y ruby:2.7
   dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
   gem install --no-document fpm
 
-  # install readline-devel from source
-#  wget http://ftp.gnu.org/gnu/readline/readline-${EL8_READLINE_VERSION}.tar.gz && \
-#  tar -xzf readline-${EL8_READLINE_VERSION}.tar.gz && \
-#  cd readline-${EL8_READLINE_VERSION} && \
-#  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
-#  make SHLIB_LIBS="-lncurses -ltinfo" && \
-#  make install
-  # install flex / lex
-  wget https://github.com/westes/flex/releases/download/v${FLEX_VERSION}/flex-${FLEX_VERSION}.tar.gz && \
-  tar -xvzf flex-${FLEX_VERSION}.tar.gz && \
-  cd flex-${FLEX_VERSION} && \
-  ./configure --prefix=/usr && \
-  make -j$(nproc) && \
-  make install && \
-  ln -s /usr/bin/flex /usr/bin/lex
-
-  dnf config-manager --set-enabled ubi-8-codeready-builder 
-  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync libedit-devel ncurses-devel
+  #todo redhat el8 does not have flex or readline-devel available in the yum repos
+  yum install -y https://rpmfind.net/linux/almalinux/8.10/BaseOS/$(uname -m)/os/Packages/readline-devel-7.0-10.el8.$(uname -m).rpm
+  yum install -y https://rpmfind.net/linux/almalinux/8.10/AppStream/$(uname -m)/os/Packages/flex-2.6.1-9.el8.$(uname -m).rpm
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync
 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
@@ -191,7 +176,56 @@ function install_deps_redhat-el8() {
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec python -m pip install pipenv
+  gem install fpm
 }
+
+function install_deps_redhat-el8() {
+  # install fpm
+##  dnf module enable -y ruby:2.7
+##  dnf -y install ruby ruby-devel redhat-rpm-config rubygems rpm-build make git
+##  gem install --no-document fpm
+
+  # install readline-devel from source
+##  wget http://ftp.gnu.org/gnu/readline/readline-${EL8_READLINE_VERSION}.tar.gz && \
+##  tar -xzf readline-${EL8_READLINE_VERSION}.tar.gz && \
+##  cd readline-${EL8_READLINE_VERSION} && \
+##  ./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib && \
+##  make SHLIB_LIBS="-lncurses -ltinfo" && \
+##  make install
+  # install flex / lex
+##  wget https://github.com/westes/flex/releases/download/v${FLEX_VERSION}/flex-${FLEX_VERSION}.tar.gz && \
+## ## tar -xvzf flex-${FLEX_VERSION}.tar.gz && \
+##  cd flex-${FLEX_VERSION} && \
+##  ./configure --prefix=/usr && \
+##  make -j$(nproc) && \
+##  make install && \
+##  ln -s /usr/bin/flex /usr/bin/lex
+
+##  dnf config-manager --set-enabled ubi-8-codeready-builder 
+##  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync libedit-devel ncurses-devel
+
+##  if [ "$(uname -m)" = "x86_64" ]; then
+##      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+##      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+##  elif [ "$(uname -m)" = "aarch64" ]; then
+##      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+##      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+##  else
+##      echo "unknown arch $(uname -m)"
+##      exit 1
+##  fi
+##  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+##  install /root/go/bin/asdf /usr/local/bin/asdf
+##  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+##  dnf install -y gcc make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+##                      sqlite sqlite-devel sqlite-libs
+##  echo "python 3.10.18" > /.tool-versions
+##  echo "python 3.10.18" > /root/.tool-versions
+
+##  asdf install python 3.10.18
+##  asdf set python 3.10.18
+##  asdf exec python -m pip install pipenv
+##}
 
 function install_deps_redhat-el9() {
   #todo redhat el9 does not have flex or readline-devel available in the yum repos
