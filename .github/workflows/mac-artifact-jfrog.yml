@@ -18,7 +18,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-13, macos-14, macos-15]  
+        os: [macos-13, macos-14, macos-15]
         include:
           - os: macos-13
             openssl-path: /usr/local/opt/openssl
@@ -36,14 +36,14 @@ jobs:
         id: checkout-dir
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
+          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.
           if_false: aql
       - name: Get aql working directory
         uses: haya14busa/action-cond@v1
         id: working-dir
         with:
           cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
+          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.
           if_false: aql
       - uses: actions/checkout@v3
         with:
@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
       - name: Checkout ${{ steps.working-dir.outputs.value }}
         working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: | 
+        run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
       - name: Print and get version
@@ -109,7 +109,7 @@ jobs:
         with:
           name: ${{ matrix.os }}-aql
           path: ${{ steps.working-dir.outputs.value }}/${{ matrix.target-dir }}/aql
-          if-no-files-found: error 
+          if-no-files-found: error
   upload-artifacts:
     strategy:
       matrix:
@@ -122,7 +122,7 @@ jobs:
           - os: macos-15
             arch: arm64
     needs: build
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@8b68c4e071050d18ecccc5f3e6911a4127b455ae # vn.n.n
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.0
     with:
       project: database
       build-name: aql
