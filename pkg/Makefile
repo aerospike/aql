@@ -34,7 +34,7 @@ deb: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
+		--package $(TARGET_DIR)/aql_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
 
 .PHONY: rpm
 rpm: prep
@@ -50,7 +50,7 @@ rpm: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/aql-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
 tar: prep
@@ -66,7 +66,7 @@ tar: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(BUILD_DISTRO)-$(VERSION)-$(ARCH).tar
+		--package $(TARGET_DIR)/aql-$(BUILD_DISTRO)-$(VERSION)-$(ARCH).tar
 
 .PHONY: prep
 prep:
