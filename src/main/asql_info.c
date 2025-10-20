@@ -430,7 +430,7 @@ bins_build_res_check(void* udata, const as_node* node, const char* req, char* re
 	for (int idx = 0; idx < parsed_resp->size; idx++) {
 		as_hashmap* map = as_vector_get_ptr(parsed_resp, idx);
 		as_string* build_key = as_string_new("build", false);
-		as_string* val = as_string_fromval(as_hashmap_get(map, build_key));
+		as_string* val = as_string_fromval(as_hashmap_get(map, (const as_val*)build_key));
 		as_string* bin_rm_build = as_string_new(strdup("7.0.0.0"), true);
 
 		if (build_gte(val, bin_rm_build)) {
