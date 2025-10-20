@@ -4,28 +4,6 @@ BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
-function install_deps_debian11() {
-  apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma \
-                 lzma-dev  libffi-dev
-  if [ "$(uname -m)" = "x86_64" ]; then
-      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
-      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
-  elif [ "$(uname -m)" = "aarch64" ]; then
-      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
-      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
-  else
-      echo "unknown arch $(uname -m)"
-      exit 1
-  fi
-  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
-  install /root/go/bin/asdf /usr/local/bin/asdf
-  asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  asdf install python 3.10.18
-  asdf set python 3.10.18
-  /root/.asdf/installs/python/3.10.18/bin/python3 -m pip install pipenv
-  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/local/bin/pipenv
-  gem install fpm -v 1.17.0
-}
 
 function install_deps_debian12() {
   apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
