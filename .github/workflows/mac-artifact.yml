@@ -9,6 +9,7 @@ permissions:
   discussions: write
   packages: write
   deployments: write
+  id-token: write
 
 on:
   push:
