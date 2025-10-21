@@ -22,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - name: Extract Version
         id: extract
         uses: aerospike/shared-workflows/.github/actions/extract-version-from-tag@v2.0.0
