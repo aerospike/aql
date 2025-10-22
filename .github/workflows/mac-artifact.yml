@@ -61,6 +61,7 @@ jobs:
       jf-build-name: aql
       jf-build-id: ${{ github.run_number }}-buildinfo-${{ matrix.os }}
       gh-checkout-path: project-location
+      gh-workflows-ref: v2.0.0 # use v2.0.1 once it is released
       working-directory: ./project-location
       build-script: |
         brew update
@@ -82,6 +83,7 @@ jobs:
       jf-build-name: aql
       jf-build-id: ${{ github.run_number }}
       jf-metadata-build-id: ${{ github.run_number }}-metadata
+      gh-workflows-ref: v2.0.0
       version: ${{ needs.extract-version.outputs.version }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
