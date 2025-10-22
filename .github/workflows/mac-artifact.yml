@@ -28,7 +28,7 @@ jobs:
           fetch-tags: true
       - name: Extract Version
         id: extract
-        uses: aerospike/shared-workflows/.github/actions/extract-version-from-tag@v2.0.0
+        uses: aerospike/shared-workflows/.github/actions/extract-version-from-tag@main
         with:
           version-file: .github/workflows/VERSION.example
     outputs:
@@ -39,7 +39,7 @@ jobs:
   # a single workflow that can be instrumented in the future.
   # This is also an example of using a matrix strategy to build in GHA
   build-aql:
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@main
     needs: extract-version
     # Matrix strategy: Multi-platform builds across Ubuntu/Debian/RPM families (x86_64 native, ARM64 emulated)
     strategy:
@@ -75,7 +75,7 @@ jobs:
       publish-build-info: true
       dry-run: false # default
   upload-artifacts:
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@main
     needs: [build-aql, extract-version]
     with:
       jf-project: database
