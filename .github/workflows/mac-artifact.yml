@@ -60,9 +60,7 @@ jobs:
       jf-project: database
       jf-build-name: aql
       jf-build-id: ${{ github.run_number }}-buildinfo-${{ matrix.os }}
-      gh-checkout-path: project-location
       gh-workflows-ref: v2.0.0 # use v2.0.1 once it is released
-      working-directory: ./project-location
       build-script: |
         find .
         brew update
