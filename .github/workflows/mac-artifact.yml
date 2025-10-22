@@ -64,6 +64,7 @@ jobs:
       gh-workflows-ref: v2.0.0 # use v2.0.1 once it is released
       working-directory: ./project-location
       build-script: |
+        find .
         brew update
         brew install automake libtool pkg-config openssl@3 || true
         make OPENSSL_STATIC_PATH="${{ matrix.openssl-path }}/lib"
