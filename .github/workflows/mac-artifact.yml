@@ -62,9 +62,11 @@ jobs:
       jf-build-id: ${{ github.run_number }}-buildinfo-${{ matrix.os }}
       gh-workflows-ref: v2.0.0 # use v2.0.1 once it is released
       build-script: |
-        find .
         brew update
         brew install automake libtool pkg-config openssl@3 || true
+        echo "pwd: $(pwd)"
+        echo "ls -laht"
+        ls -laht
         make OPENSSL_STATIC_PATH="${{ matrix.openssl-path }}/lib"
         # Sanity test the aql tool just checks if it starts up.
         ${{ matrix.target-dir }}/aql -e "info" 2>&1 | grep "Failed to connect"
