@@ -100,7 +100,7 @@ jobs:
       jf-build-id: ${{ github.run_number }}
       jf-metadata-build-id: ${{ github.run_number }}-metadata
       gh-artifact-name: build-artifacts
-      gh-workflows-ref: v2.0.0
+      gh-workflows-ref: bugfix/INFRA-220-missing-mac-artifacts
       version: ${{ needs.extract-version.outputs.version }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
