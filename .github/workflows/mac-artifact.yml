@@ -87,6 +87,5 @@ jobs:
       version: ${{ needs.extract-version.outputs.version }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      gh-artifact-name: build-artifacts
       gh-retention-days: 1
       dry-run: false
