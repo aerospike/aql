@@ -64,11 +64,11 @@ jobs:
       gh-workflows-ref: v2.0.0 # use v2.0.1 once it is released
       working-directory: ./project-location
       build-script: |
-        find .
-        brew update
+        export HOMEBREW_NO_AUTO_UPDATE=1
+        export HOMEBREW_NO_INSTALL_CLEANUP=1
+        export HOMEBREW_CASK_OPTS="--no-quarantine"
         brew install automake libtool pkg-config openssl@3 || true
         make OPENSSL_STATIC_PATH="${{ matrix.openssl-path }}/lib"
-        # Sanity test the aql tool just checks if it starts up.
       gh-artifact-directory: ${{ matrix.target-dir }}
       gh-artifact-name: build-artifacts-${{ matrix.os }}
       oidc-provider-name: database-gh-aerospike
