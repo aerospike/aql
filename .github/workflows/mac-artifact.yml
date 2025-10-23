@@ -46,7 +46,7 @@ jobs:
       matrix:
         os: [macos-14, macos-15]
         include:
-          - os: macos-1
+          - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl        # Apple Silicon prefix
             target-dir: target/Darwin-arm64/bin
           - os: macos-15
