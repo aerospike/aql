@@ -39,7 +39,7 @@ jobs:
   # a single workflow that can be instrumented in the future.
   # This is also an example of using a matrix strategy to build in GHA
   build-aql:
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@main
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@bugfix/INFRA-220-missing-mac-artifacts
     needs: extract-version
     # Matrix strategy: Multi-platform builds across Ubuntu/Debian/RPM families (x86_64 native, ARM64 emulated)
     strategy:
