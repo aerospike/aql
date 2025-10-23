@@ -52,7 +52,6 @@ jobs:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
-
   upload-artifacts:
     strategy:
       matrix:
@@ -72,3 +71,4 @@ jobs:
       dry-run: false
       build-id: ${{ github.run_number }}
       metadata-build-id: ${{ github.run_number }}-metadata
+

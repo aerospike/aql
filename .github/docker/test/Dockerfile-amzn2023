@@ -11,7 +11,7 @@ RUN dnf install -y shadow-utils
 ADD .github/docker/test/entrypoint.sh /tmp/entrypoint.sh
 ADD .github/docker/test/install_test_deps.sh /tmp/install_test_deps.sh
 RUN source /tmp/install_test_deps.sh && install_test_deps_amzn2023
-RUN dnf install -y aerospike-aql
+RUN dnf install -y aerospike-aql-"$(echo $PKG_VERSION | tr '-' '_')"-1.$(uname -m)
 ADD . /opt/aql
 WORKDIR /opt/aql
 ENTRYPOINT ["/opt/aql/.github/docker/test/entrypoint.sh"]

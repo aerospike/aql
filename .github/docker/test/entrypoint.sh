@@ -17,9 +17,9 @@ fi
 
 
 function build_container() {
-  VERSION=$(git describe --tags --always)
-  docker build --build-arg=PKG_VERSION="$VERSION" --build-arg=JF_USERNAME="$JF_USERNAME" --build-arg=JF_TOKEN="$JF_TOKEN" --progress=plain -t aql-pkg-tester-"$1":"$VERSION" -f .github/docker/test/Dockerfile-"$1" .
-  docker tag aql-pkg-tester-"$1":"$(git rev-parse HEAD | cut -c -8)" aql-pkg-tester-"$1":"latest"
+  PKG_VERSION=${PKG_VERSION:-$(git describe --tags --always)}
+  docker build --build-arg=PKG_VERSION="$PKG_VERSION" --build-arg=JF_USERNAME="$JF_USERNAME" --build-arg=JF_TOKEN="$JF_TOKEN" --progress=plain -t aql-pkg-tester-"$1":"$PKG_VERSION" -f .github/docker/test/Dockerfile-"$1" .
+  docker tag aql-pkg-tester-"$1":"$PKG_VERSION" aql-pkg-tester-"$1":"latest"
 }
 
 
@@ -97,7 +97,7 @@ fi
 
 if [ "$RUN_TESTS" = "true" ]; then
   bats .github/docker/test/test_execute.bats
-  return $?
+  exit $?
 elif [ "$INSTALL" = "true" ]; then
   if [ "$ENV_DISTRO" = "ubuntu20.04" ]; then
       echo "installing dependencies for Ubuntu 20.04"
