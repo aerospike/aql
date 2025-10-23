@@ -1,7 +1,7 @@
 [submodule "jansson"]
 	path = modules/jansson
-	url = git@github.com:aerospike/jansson.git
+	url = https://github.com/aerospike/jansson.git
 	ignore = dirty
 [submodule "c-client"]
 	path = modules/c-client
-	url = git@github.com:aerospike/aerospike-client-c.git
+	url = https://github.com/aerospike/aerospike-client-c.git
