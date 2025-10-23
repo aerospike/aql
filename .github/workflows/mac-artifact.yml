@@ -82,8 +82,12 @@ jobs:
       - name: Download All Matrix Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: build-artifacts
-          merge-multiple: true
+          path: build-artifacts/
+          pattern: build-artifacts-*
+      - name: List Artifacts
+        run: |
+          ls -laht build-artifacts
+          find build-artifacts -type f
       - name: Upload build Artifacts
         uses: actions/upload-artifact@v4
         with:
