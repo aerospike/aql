@@ -18,11 +18,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-13, macos-14, macos-15]  
+        os: [macos-14, macos-15]  
         include:
-          - os: macos-13
-            openssl-path: /usr/local/opt/openssl
-            target-dir: target/Darwin-x86_64/bin
           - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl
             target-dir: target/Darwin-arm64/bin
