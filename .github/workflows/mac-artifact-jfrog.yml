@@ -76,7 +76,7 @@ jobs:
         run: |
           brew install automake libtool
       - name: Cache C Client
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         if: steps.cache-aql.outputs.cache-hit != 'true'
         env:
           cache-name: cache-c-client
@@ -85,7 +85,7 @@ jobs:
             ${{ steps.working-dir.outputs.value }}/modules/c-client/target
           key: ${{ matrix.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/c-client/**/*', steps.working-dir.outputs.value)) }}
       - name: Cache Jansson
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         if: steps.cache-aql.outputs.cache-hit != 'true'
         env:
           cache-name: cache-jansson
