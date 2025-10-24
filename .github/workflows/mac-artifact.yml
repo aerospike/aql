@@ -44,7 +44,7 @@ jobs:
     # Matrix strategy: Multi-platform builds across Ubuntu/Debian/RPM families (x86_64 native, ARM64 emulated)
     strategy:
       matrix:
-        os: [macos-14, macos-15]
+        os: [macos-14, macos-15]  
         include:
           - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl        # Apple Silicon prefix

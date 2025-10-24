@@ -107,9 +107,9 @@ asql_key_select_explain(asql_config* c, pk_config* p, as_key* key,
 		}
 
 		as_partition *asp = &pptable->partitions[partition_id];
-		master = (as_node *)as_load_ptr(&asp->nodes[0]);
-		prole_1 = (as_node *)as_load_ptr(&asp->nodes[1]);
-		prole_2 = (as_node *)as_load_ptr(&asp->nodes[2]);
+		master = (as_node *)as_load_ptr((void* const*)&asp->nodes[0]);
+		prole_1 = (as_node *)as_load_ptr((void* const*)&asp->nodes[1]);
+		prole_2 = (as_node *)as_load_ptr((void* const*)&asp->nodes[2]);
 	}
 
 	if (master) {
