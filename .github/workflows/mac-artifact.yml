@@ -1,110 +1,110 @@
-name: Mac Artifact
+name: Mac Artifact Simplified
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
+  issues: write
+  discussions: write
+  packages: write
+  deployments: write
+  id-token: write
 
 on:
-  repository_dispatch:
-    types: [mac-build]
   push:
     branches: [actionsHub, main, "*-bugfix"]
   pull_request:
     branches: [main]
-  workflow_call:
-    inputs:
-      submodule:
-        description: The directory of the submodule, if this workflow is being called on a submodule
-        required: false
-        type: string
 
 jobs:
-  build:
+  extract-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Extract Version
+        id: extract
+        uses: aerospike/shared-workflows/.github/actions/extract-version-from-tag@main
+        with:
+          version-file: .github/workflows/VERSION.example
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      git_tag: ${{ steps.extract.outputs.git_tag }}
+  # reusable_execute-build.yaml is a reusable workflow that enables building the project. This step
+  # could be done another way, but the advantage of using the reusable workflow is that it allows
+  # a single workflow that can be instrumented in the future.
+  # This is also an example of using a matrix strategy to build in GHA
+  build-aql:
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.1
+    needs: extract-version
+    # Matrix strategy: Multi-platform builds across Ubuntu/Debian/RPM families (x86_64 native, ARM64 emulated)
     strategy:
       matrix:
-        os: [macos-14, macos-15]  
+        os: [macos-14, macos-15]
         include:
           - os: macos-14
-            openssl-path: /opt/homebrew/opt/openssl
+            openssl-path: /opt/homebrew/opt/openssl        # Apple Silicon prefix
             target-dir: target/Darwin-arm64/bin
           - os: macos-15
             openssl-path: /opt/homebrew/opt/openssl
             target-dir: target/Darwin-arm64/bin
-    runs-on: ${{ matrix.os }}
+    with:
+      runs-on: ${{ matrix.os }}
+      jf-project: database
+      jf-build-name: aql
+      jf-build-id: ${{ github.run_number }}-buildinfo-${{ matrix.os }}
+      gh-source-path: project-location
+      gh-workflows-ref: v2.0.1 # use v2.0.1 once it is released
+      working-directory: ./project-location
+      build-script: |
+        export HOMEBREW_NO_AUTO_UPDATE=1
+        export HOMEBREW_NO_INSTALL_CLEANUP=1
+        export HOMEBREW_CASK_OPTS="--no-quarantine"
+        brew install automake libtool pkg-config openssl@3 || true
+        make OPENSSL_STATIC_PATH="${{ matrix.openssl-path }}/lib"
+        mkdir -p ${{ matrix.target-dir }}/${{needs.extract-version.outputs.version}}
+        mv ${{ matrix.target-dir }}/aql ${{ matrix.target-dir }}/${{needs.extract-version.outputs.version}}/aql
+      gh-artifact-directory: ${{ matrix.target-dir }}
+      gh-artifact-name: ${{ matrix.os }}
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      publish-build-info: true
+      dry-run: false # default
+  coalesce-artifacts:
+    needs: [build-aql, extract-version]
+    runs-on: ubuntu-latest
     steps:
-      - name: Get checkout directory
-        uses: haya14busa/action-cond@v1
-        id: checkout-dir
+      - name: Download All Matrix Artifacts
+        uses: actions/download-artifact@v4
         with:
-          cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
-          if_false: aql
-      - name: Get aql working directory
-        uses: haya14busa/action-cond@v1
-        id: working-dir
-        with:
-          cond: ${{ inputs.submodule != '' }}
-          if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
-          if_false: aql
-      - uses: actions/checkout@v4
-        with:
-          path: ${{ steps.checkout-dir.outputs.value }}
-          fetch-depth: 0
-      - name: Checkout ${{ steps.working-dir.outputs.value }}
-        working-directory: ${{ steps.checkout-dir.outputs.value }}
-        run: | 
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive -- ${{ inputs.submodule || '.' }}
-      - name: Print and get version
-        working-directory: ${{ steps.working-dir.outputs.value }}
-        id: tag
+          path: build-artifacts/
+      - name: List Artifacts
         run: |
-          git describe --tags --always
-          echo "tag=$(git describe --tags --always)" >> $GITHUB_OUTPUT
-      - uses: kenchan0130/actions-system-info@v1.3.0
-        id: system-info
-      - name: Cache Aql
-        uses: actions/cache@v4
-        id: cache-aql
-        env:
-          cache-name: cache-aql
-          cache-index: "9" # To clear the cache if needed.
-        with:
-          path: |
-            ${{ steps.working-dir.outputs.value }}/target
-          key: ${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-build-${{ env.cache-name }}-${{ env.cache-index }}-${{ steps.tag.outputs.tag }}
-      - name: Download C Client Deps
-        run: |
-          brew install automake libtool
-      - name: Cache C Client
-        uses: actions/cache@v4
-        if: steps.cache-aql.outputs.cache-hit != 'true'
-        env:
-          cache-name: cache-c-client
-        with:
-          path: |
-            ${{ steps.working-dir.outputs.value }}/modules/c-client/target
-          key: ${{ matrix.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/c-client/**/*', steps.working-dir.outputs.value)) }}
-      - name: Cache Jansson
-        uses: actions/cache@v4
-        if: steps.cache-aql.outputs.cache-hit != 'true'
-        env:
-          cache-name: cache-jansson
-        with:
-          path: |
-            ${{ steps.working-dir.outputs.value }}/modules/jansson/src
-          key: ${{ matrix.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{ hashFiles(format('{0}/modules/jansson/**/*', steps.working-dir.outputs.value)) }}
-      - name: Build aql
-        if: steps.cache-aql.outputs.cache-hit != 'true'
-        working-directory: ${{ steps.working-dir.outputs.value }}
-        run: |
-          make OPENSSL_STATIC_PATH=${{ matrix.openssl-path }}/lib
-      - name: Sanity Test tools
-        working-directory: ${{ steps.working-dir.outputs.value }}
-        run: |
-          ls target
-          cd ${{ matrix.target-dir }}
-          ./aql -e "info" 2>&1 | grep "Failed to connect"
-      - name: Upload Artifacts
+          echo "build-artifacts: $(ls -laht build-artifacts) "
+          echo "find build-artifacts/ -type f $(find build-artifacts/ -type f)"
+      - name: Upload build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ matrix.os }}-${{ steps.system-info.outputs.release }}-aql
-          path: ${{ steps.working-dir.outputs.value }}/${{ matrix.target-dir }}/aql
-          if-no-files-found: error 
-          
+          name: aql
+          path: build-artifacts
+          overwrite: true
+          retention-days: 1
+  deploy-artifacts:
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.1
+    needs: [coalesce-artifacts, extract-version]
+    with:
+      jf-project: database
+      jf-build-name: aql
+      jf-build-id: ${{ github.run_number }}
+      jf-metadata-build-id: ${{ github.run_number }}-metadata
+      gh-artifact-name: aql
+      gh-workflows-ref: v2.0.1
+      version: ${{ needs.extract-version.outputs.version }}
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      gh-retention-days: 1
+      dry-run: false
