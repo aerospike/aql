@@ -89,7 +89,7 @@ jobs:
       - name: Upload build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: aql
           path: build-artifacts
           overwrite: true
           retention-days: 1
@@ -101,7 +101,7 @@ jobs:
       jf-build-name: aql
       jf-build-id: ${{ github.run_number }}
       jf-metadata-build-id: ${{ github.run_number }}-metadata
-      gh-artifact-name: build-artifacts
+      gh-artifact-name: aql
       gh-workflows-ref: v2.0.1
       version: ${{ needs.extract-version.outputs.version }}
       oidc-provider-name: database-gh-aerospike
