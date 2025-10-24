@@ -44,7 +44,7 @@ jobs:
     # Matrix strategy: Multi-platform builds across Ubuntu/Debian/RPM families (x86_64 native, ARM64 emulated)
     strategy:
       matrix:
-        os: [macos-14, macos-15]  
+        os: [macos-14, macos-15]
         include:
           - os: macos-14
             openssl-path: /opt/homebrew/opt/openssl        # Apple Silicon prefix
@@ -67,7 +67,7 @@ jobs:
         brew install automake libtool pkg-config openssl@3 || true
         make OPENSSL_STATIC_PATH="${{ matrix.openssl-path }}/lib"
       gh-artifact-directory: ${{ matrix.target-dir }}
-      gh-artifact-name: build-artifacts-${{ matrix.os }}
+      gh-artifact-name: ${{ matrix.os }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       publish-build-info: true
@@ -80,11 +80,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: build-artifacts/
-          pattern: build-artifacts-*
       - name: List Artifacts
         run: |
           ls -laht build-artifacts
-          find build-artifacts -type f
+          find build-artifacts/ -type f -exec mkdir ${{needs.extract-version.outputs.version}} && cp {} ${{needs.extract-version.outputs.version}} \;
       - name: Upload build Artifacts
         uses: actions/upload-artifact@v4
         with:
