@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/modules/c-client" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/modules/c-client/modules/common" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/modules/c-client/modules/lua" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/modules/c-client/modules/mod-lua" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/modules/jansson" vcs="Git" />
+  </component>
+</project>

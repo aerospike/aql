@@ -3,16 +3,15 @@ PKG_DIR = $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 TOP_DIR = $(PKG_DIR)/../target/"$(shell uname -s)-$(shell uname -m)"
 BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
-# aql doesn't support configs yet but fpm complains without this
 CONFIG_DIR = /etc/aerospike
-
 # Package variables
-NAME = "aerospike-aql"
-VERSION = $(shell git describe --tags --always)
+BUILD_DISTRO ?= $(shell .github/packaging/common/os_version.sh)
+NAME = "aerospike-$(PACKAGE_NAME)"
 MAINTAINER = "Aerospike"
-DESCRIPTION = "AQL, a tool for interacting with the Aerospike database."
+VERSION = $(shell git describe --tags --always)
+DESCRIPTION = "Asconfig, a tool for managing Aerospike database configuration files."
 LICENSE = "Apache License 2.0"
-URL = "https://github.com/aerospike/aql"
+URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
 

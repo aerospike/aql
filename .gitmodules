@@ -5,3 +5,6 @@
 [submodule "c-client"]
 	path = modules/c-client
 	url = https://github.com/aerospike/aerospike-client-c.git
+[submodule ".github/packaging/common"]
+	path = .github/packaging/common
+	url = https://github.com/aerospike/server-packaging-common.git
