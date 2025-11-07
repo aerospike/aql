@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-BUILD_DEPS_REDHAT="readline which autoconf libtool" #readline-devel flex
-BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex"
+BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel" #readline-devel flex
+BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
 
