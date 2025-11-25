@@ -76,6 +76,7 @@ prep:
 	install -d $(BUILD_DIR)/usr/bin
 	ln -sf /opt/aerospike/bin/aql $(BUILD_DIR)/usr/bin/aql
 
+
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
