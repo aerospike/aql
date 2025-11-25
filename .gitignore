@@ -73,3 +73,6 @@ xcuserdata
 *.swp
 *~.nib
 .cache
+
+#Intellij
+.idea/*
