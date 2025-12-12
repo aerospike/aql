@@ -34,29 +34,34 @@ jobs:
         # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
     steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+      with:
+        egress-policy: audit
+
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
+      uses: github/codeql-action/init@b8d3b6e8af63cde30bdc382c0bc28114f4346c88 # v2.28.1
       with:
         languages: ${{ matrix.language }}
     - name: Get checkout directory
-      uses: haya14busa/action-cond@v1
+      uses: step-security/action-cond@45aa5a709bd075f11c74285d8b0ca4d527e5fbcf # v1.2.4
       id: checkout-dir
       with:
         cond: ${{ inputs.submodule != '' }}
         if_true: aerospike-tools  # In this case we are expecting to checkout the tools package.  
         if_false: aql
     - name: Get aql working directory
-      uses: haya14busa/action-cond@v1
+      uses: step-security/action-cond@45aa5a709bd075f11c74285d8b0ca4d527e5fbcf # v1.2.4
       id: working-dir
       with:
         cond: ${{ inputs.submodule != '' }}
         if_true: aerospike-tools/${{ inputs.submodule }}  # In this case we are expecting to checkout the tools package.  
         if_false: aql
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       with:
         path: ${{ steps.checkout-dir.outputs.value }}
         fetch-depth: 0
@@ -69,13 +74,13 @@ jobs:
       working-directory: ${{ steps.working-dir.outputs.value }}
       run: |
         git describe --tags --always
-    - uses: kenchan0130/actions-system-info@v1.3.0
+    - uses: kenchan0130/actions-system-info@b98fe44bc35efcc60a9828cf4a04783a8b370bde # v1.3.0
       id: system-info
     - name: Download C Client Deps
       run: |
         sudo apt-get install libc6-dev libssl-dev autoconf automake libtool g++ zlib1g-dev ncurses-dev liblua5.1-dev
     - name: Cache C Client
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       env:
         cache-name: cache-c-client
       with:
@@ -83,7 +88,7 @@ jobs:
           ${{ steps.working-dir.outputs.value }}/modules/c-client/target
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('modules/c-client') }}
     - name: Cache Jansson
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       env:
         cache-name: cache-jansson
       with:
@@ -95,6 +100,6 @@ jobs:
       run: |
         make
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      uses: github/codeql-action/analyze@b8d3b6e8af63cde30bdc382c0bc28114f4346c88 # v2.28.1
       with:
         category: "/language:${{matrix.language}}"
