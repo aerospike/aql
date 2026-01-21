@@ -10,6 +10,9 @@ function build_packages(){
   make
   cd $PKG_DIR
   echo "building package for $BUILD_DISTRO"
+  echo "build_package.sh version: $(git describe --tags --always --abbrev=9)"
+  VERSION=$(git describe --tags --always --abbrev=9)
+  export VERSION
 
   if [[ $ENV_DISTRO == *"ubuntu"* ]]; then
     make deb
