@@ -107,7 +107,7 @@ ifneq ($(OS),Darwin)
 endif
 
 # Set the AQL version from the latest Git tag.
-CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always)\"
+CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always --abbrev=9)\"
 
 ##
 ## MAIN
