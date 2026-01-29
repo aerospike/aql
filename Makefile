@@ -101,7 +101,7 @@ else
   endif
 endif
 
-LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz
+LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz -lyaml
 ifneq ($(OS),Darwin)
   LIBRARIES += -lhistory -lrt -ldl -lz
 endif
