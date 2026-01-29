@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel"
-BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
-BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool"
-BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool"
+BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel libyaml-devel"
+BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel libyaml-devel"
+BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
+BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
 
 function install_deps_debian11() {
   rm -rf /var/lib/apt/lists/*

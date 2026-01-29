@@ -106,6 +106,30 @@ ifneq ($(OS),Darwin)
   LIBRARIES += -lhistory -lrt -ldl -lz
 endif
 
+# Static link libyaml to avoid runtime dependency
+ifeq ($(OS),Darwin)
+  ifdef M1_HOME_BREW
+    LIBYAML_STATIC := /opt/homebrew/lib/libyaml.a
+  else
+    LIBYAML_STATIC := /usr/local/lib/libyaml.a
+  endif
+else
+  # Linux: try common static library locations
+  ifneq ($(wildcard /usr/lib64/libyaml.a),)
+    LIBYAML_STATIC := /usr/lib64/libyaml.a
+  else ifneq ($(wildcard /usr/lib/$(shell uname -m)-linux-gnu/libyaml.a),)
+    LIBYAML_STATIC := /usr/lib/$(shell uname -m)-linux-gnu/libyaml.a
+  else ifneq ($(wildcard /usr/lib/libyaml.a),)
+    LIBYAML_STATIC := /usr/lib/libyaml.a
+  endif
+endif
+
+ifeq ($(LIBYAML_STATIC),)
+  $(error libyaml.a static library not found. Install libyaml-devel (RHEL) or libyaml-dev (Debian/Ubuntu))
+endif
+
+LIBRARIES += $(LIBYAML_STATIC)
+
 # Set the AQL version from the latest Git tag.
 CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always)\"
 
