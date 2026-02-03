@@ -90,7 +90,7 @@ function install_deps_el8() {
   dnf module enable -y ruby:2.7
   yum install -y "https://download.rockylinux.org/pub/rocky/8.10/AppStream/$(uname -m)/os/Packages/f/flex-2.6.1-9.el8.$(uname -m).rpm"
   yum install -y "https://download.rockylinux.org/pub/rocky/8.10/Devel/$(uname -m)/os/Packages/r/readline-devel-7.0-10.el8.$(uname -m).rpm"
-  dnf -y install --allowerasing $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync wget curl
+  dnf -y install $BUILD_DEPS_REDHAT gcc-c++ ruby rpm-build make git python3 python3-pip rsync wget
   build_libyaml_static
   gem install fpm -v 1.17.0
   dnf clean all
@@ -113,7 +113,7 @@ function install_deps_el10() {
   dnf -y update
   yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/AppStream/$(uname -m)/os/Packages/f/flex-2.6.4-19.el10.$(uname -m).rpm"
   yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/devel/$(uname -m)/os/Packages/r/readline-devel-8.2-11.el10.$(uname -m).rpm"
-  dnf -y install --allowerasing $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync curl
+  dnf -y install $BUILD_DEPS_REDHAT ruby rpmdevtools make git python3 python3-pip rsync
   build_libyaml_static
   gem install fpm -v 1.17.0
   dnf clean all
