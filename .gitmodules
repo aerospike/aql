@@ -8,3 +8,4 @@
 [submodule ".github/packaging/common"]
 	path = .github/packaging/common
 	url = https://github.com/aerospike/tools-packaging-common.git
+	branch = enable-el10
