@@ -55,15 +55,6 @@ function install_deps_debian13() {
 function install_deps_ubuntu20.04() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
-  
-  # Ubuntu 20.04 (Focal) is EOL - switch to old-releases archive
-  if [[ "$(uname -m)" == "aarch64" ]]; then
-    sed -i 's|ports.ubuntu.com/ubuntu-ports|old-releases.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-  else
-    sed -i 's|archive.ubuntu.com/ubuntu|old-releases.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-    sed -i 's|security.ubuntu.com/ubuntu|old-releases.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-  fi
-  
   apt-get update -o Acquire::Retries=5
   apt -y install $BUILD_DEPS_UBUNTU ruby make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev \
                  lzma lzma-dev libffi-dev
