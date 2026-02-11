@@ -6,35 +6,6 @@ BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-d
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
 
-# Retry helper for apt install to handle rate limiting from parallel builds
-function apt_install_with_retry() {
-  local max_attempts=5
-  local attempt=1
-  local delay=10
-
-  while [[ $attempt -le $max_attempts ]]; do
-    echo "Attempt $attempt of $max_attempts: apt install..."
-    if apt -y install "$@"; then
-      echo "apt install succeeded on attempt $attempt"
-      return 0
-    fi
-    
-    if [[ $attempt -lt $max_attempts ]]; then
-      echo "apt install failed, retrying in ${delay}s..."
-      sleep $delay
-      # Clean and update before retry
-      rm -rf /var/lib/apt/lists/*
-      apt-get clean
-      apt-get update -o Acquire::Retries=5
-      delay=$((delay * 2))  # Exponential backoff
-    fi
-    attempt=$((attempt + 1))
-  done
-
-  echo "apt install failed after $max_attempts attempts"
-  return 1
-}
-
 # Build libyaml from source with static library (RHEL/Amazon packages don't include .a files)
 function build_libyaml_static() {
   local LIBYAML_VERSION="0.2.5"
@@ -52,7 +23,7 @@ function install_deps_debian11() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma \
+  apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma \
                  lzma-dev libffi-dev
   gem install fpm -v 1.17.0
   rm -rf /var/lib/apt/lists/*
@@ -62,7 +33,7 @@ function install_deps_debian12() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
+  apt -y install $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
                  lzma-dev libffi-dev
   gem install fpm -v 1.17.0
   rm -rf /var/lib/apt/lists/*
@@ -73,7 +44,7 @@ function install_deps_debian13() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_DEBIAN gcc-13 g++-13 ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
+  apt -y install $BUILD_DEPS_DEBIAN gcc-13 g++-13 ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
                  liblzma-dev libffi-dev
   update-alternatives --install /usr/bin/gcc gcc $(which gcc-13) 10
   update-alternatives --install /usr/bin/g++ g++ $(which g++-13) 10
@@ -85,7 +56,7 @@ function install_deps_ubuntu20.04() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_UBUNTU ruby make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev \
+  apt -y install $BUILD_DEPS_UBUNTU ruby make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev \
                  lzma lzma-dev libffi-dev
 
   gem install fpm -v 1.17.0
@@ -96,7 +67,7 @@ function install_deps_ubuntu22.04() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev \
+  apt -y install $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev \
                lzma lzma-dev libffi-dev
   gem install fpm -v 1.17.0
   rm -rf /var/lib/apt/lists/*
@@ -106,7 +77,7 @@ function install_deps_ubuntu24.04() {
   rm -rf /var/lib/apt/lists/*
   apt-get clean
   apt-get update -o Acquire::Retries=5
-  apt_install_with_retry $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev \
+  apt -y install $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev \
                lzma lzma-dev libffi-dev
   gem install fpm -v 1.17.0
   rm -rf /var/lib/apt/lists/*
