@@ -1373,22 +1373,17 @@ parse_show_info(tokenizer* tknzr)
 		}
 		else {
 			asql_name ns = NULL;
-			asql_name set = NULL;
 
-			if (!parse_ns_and_set(tknzr, &ns, &set)) {
+			if (!parse_name(tknzr->tok, &ns, false)) {
 				goto show_error;
 			}
 
 			char infocmd[1024];
-			if (set)
-				sprintf(infocmd, "sindex-list:ns=%s;set=%s\n", ns, set);
-			else
-				sprintf(infocmd, "sindex-list:ns=%s;\n", ns);
+			sprintf(infocmd, "sindex-list:ns=%s;\n", ns);
 
 			i = asql_info_config_create(ASQL_OP_SHOW, strdup(infocmd), NULL, false);
 
 			if (ns) free(ns);
-			if (set) free(set);
 		}
 	}
 	else {
