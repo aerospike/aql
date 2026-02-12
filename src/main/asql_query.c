@@ -259,10 +259,10 @@ static bool epbv_callback(const as_error* err, const as_node* node, const char* 
 }
 
 static double get_avg_rec_per_bval(as_error* err, asql_name ns, asql_name index_name) {
-	char* req = malloc(sizeof(char *) * 7 + strlen(ns) + 1 + strlen(index_name) + 1);
+	char* req = malloc(strlen("sindex-stat:namespace=;indexname=") + strlen(ns) + strlen(index_name) + 1);
 	double cardinality = 0.0f;
 	double total_epb = 0.0f;
-	sprintf(req, "sindex/%s/%s", ns, index_name);
+	sprintf(req, "sindex-stat:namespace=%s;indexname=%s", ns, index_name);
 
 	if (aerospike_info_foreach(g_aerospike, err, NULL, req, epbv_callback, &total_epb) != AEROSPIKE_OK) {
 		return 0;
@@ -301,9 +301,9 @@ compare_avg_rec_per_bval(const asql_name ns, asql_name set, asql_name ibname, as
 	// returns negative ibname < ibname2
 	int rv = 0;
 	*exists = true;
-	char* req = malloc(sizeof(char *) * 7 + strlen(ns) + 1);
+	char* req = malloc(strlen("sindex-list:namespace=") + strlen(ns) + 1);
 	char* res = NULL;
-	sprintf(req, "sindex/%s", ns);
+	sprintf(req, "sindex-list:namespace=%s", ns);
 	as_vector* responses = as_vector_create(sizeof(as_hashmap*), 128);
 
 	if (aerospike_info_any(g_aerospike, err, NULL, req, &res) != AEROSPIKE_OK) {
