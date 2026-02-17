@@ -213,5 +213,16 @@ cleanmodules:
 		$(MAKE) -C $(JANSSON_PATH) distclean || true; \
 	fi; \
 
+E2E_TEST_CMD = pytest --disable-warnings test/
+
+.PHONY: init
+init:
+	pipenv install --dev
+	pipenv graph
+
+.PHONY: test
+test: all
+	pipenv run $(E2E_TEST_CMD)
+
 .PHONY: cleanall
 cleanall: clean cleanmodules
