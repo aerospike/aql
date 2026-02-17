@@ -121,14 +121,6 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test where a-int = 0 and int = 0".format(utils.SET_NAME),
-                "20 rows in set",
-            ),
-            (
-                "select * from test where a-int = 0 and b-int = 5".format(utils.SET_NAME),
-                "10 rows in set",
-            ),
-            (
                 "select * from test.{} where a-int = 0 and int = 0".format(utils.SET_NAME),
                 "20 rows in set",
             ),

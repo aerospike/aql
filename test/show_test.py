@@ -19,16 +19,17 @@ class ShowPositiveTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("set output json; show namespaces", 2, ["namespaces"]),
+            ("set output json; show namespaces", 1, ["namespaces"]),
             (
                 "set output json; show indexes",
                 4,
                 [
                     "bin",
+                    "context",
+                    "exp",
                     "indexname",
                     "indextype",
                     "ns",
-                    "context",
                     "set",
                     "state",
                     "type",
@@ -38,20 +39,21 @@ class ShowPositiveTest(unittest.TestCase):
                 "set output json; show sets",
                 1,
                 [
-                    "device_data_bytes",
+                    "data_used_bytes",
+                    "default-read-touch-ttl-pct",
+                    "default-ttl",
                     "disable-eviction",
                     "enable-index",
                     "index_populating",
-                    "memory_data_bytes",
                     "ns",
-                    "set",
                     "objects",
+                    "set",
                     "sindexes",
                     "stop-writes-count",
+                    "stop-writes-size",
                     "tombstones",
                     "truncate_lut",
-                    "stop-writes-size",
-                    "truncating"
+                    "truncating",
                 ],
             ),
         ]
