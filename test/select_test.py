@@ -20,14 +20,11 @@ class SelectPositiveTest(unittest.TestCase):
         utils.create_sindex("b-int-index", "numeric", "test", "b-int", set_=utils.SET_NAME)
         utils.create_sindex("mix-int-index", "numeric", "test", "int-str-mix", set_=utils.SET_NAME)
         utils.create_sindex("mix-str-index", "string", "test", "int-str-mix", set_=utils.SET_NAME)
-        utils.create_sindex("a-int-index-no-set", "numeric", "test", "a-int")
-        utils.create_sindex("b-int-index-no-set", "numeric", "test", "b-int")
-        # time.sleep(10000)
 
     @parameterized.expand(
         [
             (
-                "select * from test",
+                "select * from test.{}".format(utils.SET_NAME),
                 "100 rows in set",
             ),
             (
@@ -46,7 +43,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test where a-int = 0".format(utils.SET_NAME),
+                "select * from test.{} where a-int = 0".format(utils.SET_NAME),
                 "20 rows in set",
             ),
             (
@@ -72,7 +69,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test limit 9".format(utils.SET_NAME),
+                "select * from test.{} limit 9".format(utils.SET_NAME),
                 "9 rows in set",
             ),
             (
@@ -91,7 +88,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test where a-int = 0 limit 9".format(utils.SET_NAME),
+                "select * from test.{} where a-int = 0 limit 9".format(utils.SET_NAME),
                 "9 rows in set",
             ),
             (
