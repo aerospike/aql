@@ -20,6 +20,8 @@ class SelectPositiveTest(unittest.TestCase):
         utils.create_sindex("b-int-index", "numeric", "test", "b-int", set_=utils.SET_NAME)
         utils.create_sindex("mix-int-index", "numeric", "test", "int-str-mix", set_=utils.SET_NAME)
         utils.create_sindex("mix-str-index", "string", "test", "int-str-mix", set_=utils.SET_NAME)
+        utils.create_sindex("a-int-index-no-set", "numeric", "test", "a-int")
+        utils.create_sindex("b-int-index-no-set", "numeric", "test", "b-int")
 
     @parameterized.expand(
         [
