@@ -12,9 +12,9 @@ class SelectPositiveTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.ips = utils.run_containers(utils.SET_NAME, 1, version=utils.AEROSPIKE_VERSION)
         cls.addClassCleanup(lambda: utils.shutdown_containers(utils.SET_NAME))
-        utils.create_client((cls.ips[0], 3000))
+        utils.create_client((cls.ips[0], utils.PORT))
         utils.populate_db(utils.SET_NAME)
-        utils.create_sindex("a-str-index", "string", "test","a-str", set_=utils.SET_NAME)
+        utils.create_sindex("a-str-index", "string", "test", "a-str", set_=utils.SET_NAME)
         utils.create_sindex("b-str-index", "string", "test", "b-str", set_=utils.SET_NAME)
         utils.create_sindex("a-int-index", "numeric", "test", "a-int", set_=utils.SET_NAME)
         utils.create_sindex("b-int-index", "numeric", "test", "b-int", set_=utils.SET_NAME)
@@ -22,12 +22,11 @@ class SelectPositiveTest(unittest.TestCase):
         utils.create_sindex("mix-str-index", "string", "test", "int-str-mix", set_=utils.SET_NAME)
         utils.create_sindex("a-int-index-no-set", "numeric", "test", "a-int")
         utils.create_sindex("b-int-index-no-set", "numeric", "test", "b-int")
-        # time.sleep(10000)
 
     @parameterized.expand(
         [
             (
-                "select * from test",
+                "select * from test.{}".format(utils.SET_NAME),
                 "100 rows in set",
             ),
             (
@@ -38,7 +37,7 @@ class SelectPositiveTest(unittest.TestCase):
     )
     def test_select(self, cmd, check_str):
         output = utils.run_aql(
-            ["-h", self.ips[0], "-c", cmd]
+            ["-h", self.ips[0], "-p", str(utils.PORT), "-c", cmd]
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), check_str)
@@ -46,7 +45,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test where a-int = 0".format(utils.SET_NAME),
+                "select * from test.{} where a-int = 0".format(utils.SET_NAME),
                 "20 rows in set",
             ),
             (
@@ -60,6 +59,8 @@ class SelectPositiveTest(unittest.TestCase):
             [
                 "-h",
                 self.ips[0],
+                "-p",
+                str(utils.PORT),
                 "-c",
                 cmd,
             ]
@@ -70,7 +71,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test limit 9".format(utils.SET_NAME),
+                "select * from test.{} limit 9".format(utils.SET_NAME),
                 "9 rows in set",
             ),
             (
@@ -81,7 +82,7 @@ class SelectPositiveTest(unittest.TestCase):
     )
     def test_select_limit(self, cmd, check_str):
         output = utils.run_aql(
-            ["-h", self.ips[0], "-c", cmd]
+            ["-h", self.ips[0], "-p", str(utils.PORT), "-c", cmd]
         )
         self.assertEqual(output.returncode, 0)
         self.assertRegex(str(output.stdout), check_str)
@@ -89,7 +90,7 @@ class SelectPositiveTest(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "select * from test where a-int = 0 limit 9".format(utils.SET_NAME),
+                "select * from test.{} where a-int = 0 limit 9".format(utils.SET_NAME),
                 "9 rows in set",
             ),
             (
@@ -107,6 +108,8 @@ class SelectPositiveTest(unittest.TestCase):
             [
                 "-h",
                 self.ips[0],
+                "-p",
+                str(utils.PORT),
                 "-c",
                 cmd,
             ]
@@ -116,14 +119,6 @@ class SelectPositiveTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            (
-                "select * from test where a-int = 0 and int = 0".format(utils.SET_NAME),
-                "20 rows in set",
-            ),
-            (
-                "select * from test where a-int = 0 and b-int = 5".format(utils.SET_NAME),
-                "10 rows in set",
-            ),
             (
                 "select * from test.{} where a-int = 0 and int = 0".format(utils.SET_NAME),
                 "20 rows in set",
@@ -173,6 +168,8 @@ class SelectPositiveTest(unittest.TestCase):
             [
                 "-h",
                 self.ips[0],
+                "-p",
+                str(utils.PORT),
                 "-c",
                 cmd,
             ]
@@ -223,6 +220,8 @@ class SelectPositiveTest(unittest.TestCase):
             [
                 "-h",
                 self.ips[0],
+                "-p",
+                str(utils.PORT),
                 "-c",
                 cmd,
             ]
@@ -289,6 +288,8 @@ class SelectPositiveTest(unittest.TestCase):
             [
                 "-h",
                 self.ips[0],
+                "-p",
+                str(utils.PORT),
                 "-c",
                 cmd,
             ]
@@ -302,7 +303,7 @@ class SelectNegativeTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.ips = utils.run_containers(utils.SET_NAME, 1, version=utils.AEROSPIKE_VERSION)
         cls.addClassCleanup(lambda: utils.shutdown_containers(utils.SET_NAME))
-        utils.create_client((cls.ips[0], 3000))
+        utils.create_client((cls.ips[0], utils.PORT))
         utils.create_sindex("b-int-index", "numeric", "test", "b", utils.SET_NAME)
 
     @parameterized.expand(
@@ -349,7 +350,7 @@ class SelectNegativeTest(unittest.TestCase):
         ]
     )
     def test_select_syntax_error(self, cmd, assert_str):
-        output = utils.run_aql(["-h", self.ips[0], "-c", cmd])
+        output = utils.run_aql(["-h", self.ips[0], "-p", str(utils.PORT), "-c", cmd])
         self.assertEqual(output.returncode, 0)
         print(str(output.stderr))
         self.assertTrue(assert_str in output.stderr.decode(sys.stdout.encoding))
