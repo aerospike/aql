@@ -234,7 +234,7 @@ jobs:
       - organize-built-artifacts
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.2.0
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
