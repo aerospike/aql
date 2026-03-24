@@ -5,8 +5,8 @@ export FPM_VERSION="1.17.0"
 
 BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel"
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
-BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev"
-BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev"
+BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
+BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
 
 function build_libyaml_static() {
 	local LIBYAML_VERSION="0.2.5"
@@ -47,7 +47,7 @@ function install_deps_debian13() {
 	apt-get clean
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $BUILD_DEPS_DEBIAN gcc-13 g++-13 ruby-rubygems make rpm git curl binutils \
-		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev ruby-dev
+		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev ruby-dev build-essential
 	update-alternatives --install /usr/bin/gcc gcc "$(which gcc-13)" 10
 	update-alternatives --install /usr/bin/g++ g++ "$(which g++-13)" 10
 	update-alternatives --install /usr/bin/cc cc "$(which gcc-13)" 10
