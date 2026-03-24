@@ -5,7 +5,7 @@ BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
-BUILD_DISTRO ?= $(shell .github/packaging/common/os_version.sh)
+BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = "aerospike-$(PACKAGE_NAME)"
 MAINTAINER = "Aerospike"
 VERSION ?= $(shell git describe --tags --always --abbrev=9)
