@@ -50,6 +50,7 @@ function install_deps_debian13() {
 		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev ruby-dev
 	update-alternatives --install /usr/bin/gcc gcc "$(which gcc-13)" 10
 	update-alternatives --install /usr/bin/g++ g++ "$(which g++-13)" 10
+	update-alternatives --install /usr/bin/cc cc "$(which gcc-13)" 10
 	gem install fpm -v "$FPM_VERSION"
 	apt-get clean
 	rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
