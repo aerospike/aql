@@ -14,6 +14,11 @@ LICENSE = "Apache License 2.0"
 URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
+RPM_VERSION := $(subst -,_,$(VERSION))
+MAC_VERSION := $(RPM_VERSION)
+MAC_ROOT = $(BUILD_DIR)/mac-root
+PKG_ID = com.aerospike.aql
+MAC_PKG = $(TARGET_DIR)/aerospike-aql-$(MAC_VERSION)-$(ARCH).pkg
 
 
 .PHONY: all
@@ -77,8 +82,29 @@ prep:
 	ln -sf /opt/aerospike/bin/aql $(BUILD_DIR)/usr/bin/aql
 
 
+
+# Staging for macOS installer: install to /usr/local/aerospike/bin with symlink at /usr/local/bin.
+.PHONY: prep-mac
+prep-mac:
+	install -d $(TARGET_DIR)
+	rm -rf $(MAC_ROOT)
+	install -d $(MAC_ROOT)/usr/local/aerospike/bin
+	install -d $(MAC_ROOT)/usr/local/bin
+	install -pm 755 $(TOP_DIR)/bin/aql $(MAC_ROOT)/usr/local/aerospike/bin/aql
+	ln -sf ../aerospike/bin/aql $(MAC_ROOT)/usr/local/bin/aql
+
+.PHONY: osx-pkg
+osx-pkg: prep-mac
+	pkgbuild \
+		--root $(MAC_ROOT) \
+		--identifier $(PKG_ID) \
+		--version $(MAC_VERSION) \
+		--install-location / \
+		$(MAC_PKG)
+
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
 	rm -rf $(BUILD_DIR)/opt
 	rm -rf $(BUILD_DIR)/var
+	rm -rf $(MAC_ROOT)
