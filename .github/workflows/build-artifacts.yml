@@ -281,11 +281,21 @@ jobs:
         run: |
           (cd ${{ matrix.target-dir }} && ./aql -e "info" 2>&1 || true) | grep "Failed to connect"
 
+      - name: Create .pkg
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+        run: |
+          make -C pkg osx-pkg VERSION="${VERSION}"
+          PKG_VERSION="${VERSION//-/_}"
+          ARCH=$(uname -m)
+          mv "pkg/target/aerospike-aql-${PKG_VERSION}-${ARCH}.pkg" \
+             "aerospike-aql-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.pkg"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
-          path: ${{ matrix.target-dir }}/aql
+          path: aerospike-aql-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.pkg
           if-no-files-found: error
           retention-days: 1
 
