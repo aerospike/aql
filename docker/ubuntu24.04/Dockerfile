@@ -59,7 +59,7 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
         echo "${PKG_SHA}  /tmp/aql.deb" | sha256sum -c -; \
     fi && \
-    dpkg -i /tmp/aql.deb && \
+    apt-get install -y /tmp/aql.deb && \
     rm -f /tmp/aql.deb && \
     rm -rf /var/lib/apt/lists/*
 
