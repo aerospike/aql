@@ -48,7 +48,7 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
         LOCAL_PKG="${AQL_LOCAL_PKG_ARM64:-${AQL_LOCAL_PKG}}"; \
     fi && \
     apt-get update -y && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates libreadline8t64 && \
     if [ -n "${LOCAL_PKG}" ] && [ -f "/build-ctx/${LOCAL_PKG}" ]; then \
         cp "/build-ctx/${LOCAL_PKG}" /tmp/aql.deb; \
     else \
