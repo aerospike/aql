@@ -2,3 +2,4 @@
 set -euo pipefail
 
 aql --help
+aql --version

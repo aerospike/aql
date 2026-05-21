@@ -1,7 +1,7 @@
 
 *.csproj.user
 .vscode
-bin
+/bin
 obj
 target
 .cproject
