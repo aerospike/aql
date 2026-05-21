@@ -5,6 +5,7 @@ BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
+PACKAGE_NAME = aql
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = "aerospike-$(PACKAGE_NAME)"
 MAINTAINER = "Aerospike"
@@ -15,7 +16,8 @@ URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
 RPM_VERSION := $(subst -,_,$(VERSION))
-MAC_VERSION := $(RPM_VERSION)
+# pkgbuild rejects '-' and '_' in --version; normalize pre-release tags to '.' (see CI .pkg rename).
+MAC_VERSION := $(subst _,.,$(subst -,.,$(VERSION)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
 PKG_ID = com.aerospike.aql
 MAC_PKG = $(TARGET_DIR)/aerospike-aql-$(MAC_VERSION)-$(ARCH).pkg
