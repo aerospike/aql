@@ -130,8 +130,9 @@ endif
 
 LIBRARIES += $(LIBYAML_STATIC)
 
-# Set the AQL version from the latest Git tag.
-CFLAGS += -DAQL_VERSION=\"$(shell git describe --tags --always)\"
+# Embed aql --version string: default from git; CI passes AQL_VERSION to match VERSION.
+AQL_VERSION ?= $(shell git describe --tags --always)
+CFLAGS += -DAQL_VERSION=\"$(AQL_VERSION)\"
 
 ##
 ## MAIN

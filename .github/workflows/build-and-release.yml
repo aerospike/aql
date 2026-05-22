@@ -269,6 +269,7 @@ jobs:
         if: steps.cache-aql.outputs.cache-hit != 'true'
         env:
           OPENSSL_STATIC_PATH: ${{ matrix.openssl-path }}/lib
+          AQL_VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           make OPENSSL_STATIC_PATH="${OPENSSL_STATIC_PATH}"
 

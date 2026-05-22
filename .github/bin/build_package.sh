@@ -3,19 +3,21 @@ set -xeuo pipefail
 
 function build_packages() {
 	if [ "${ENV_DISTRO:-}" = "" ]; then
-		echo "ENV_DISTRO is not set"
-		return
+		echo "ENV_DISTRO is not set" >&2
+		return 1
 	fi
 	GIT_DIR=$(git rev-parse --show-toplevel)
 	PKG_DIR="$GIT_DIR/pkg"
 
-	# build
+	# build (AQL_VERSION must match packaged SemVer; git describe lags until tag exists)
 	cd "$GIT_DIR" || exit 1
-	make
-
-	echo "build_package.sh version: $(git describe --tags --always --abbrev=9)"
 	VERSION=${PKG_VERSION:-$(git describe --tags --always --abbrev=9)}
 	export VERSION
+	export AQL_VERSION="${VERSION}"
+	make clean
+	make
+
+	echo "build_package.sh version: ${VERSION}"
 
 	# package
 	cd "$PKG_DIR" || exit 1
