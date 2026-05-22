@@ -5,7 +5,8 @@ BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
-BUILD_DISTRO ?= $(shell .github/packaging/common/os_version.sh)
+PACKAGE_NAME = aql
+BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = "aerospike-$(PACKAGE_NAME)"
 MAINTAINER = "Aerospike"
 VERSION ?= $(shell git describe --tags --always --abbrev=9)
@@ -14,6 +15,12 @@ LICENSE = "Apache License 2.0"
 URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
+RPM_VERSION := $(subst -,_,$(VERSION))
+# pkgbuild rejects '-' and '_' in --version; normalize pre-release tags to '.' (see CI .pkg rename).
+MAC_VERSION := $(subst _,.,$(subst -,.,$(VERSION)))
+MAC_ROOT = $(BUILD_DIR)/mac-root
+PKG_ID = com.aerospike.aql
+MAC_PKG = $(TARGET_DIR)/aerospike-aql-$(MAC_VERSION)-$(ARCH).pkg
 
 
 .PHONY: all
@@ -33,6 +40,7 @@ deb: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
+		--depends "libreadline8" \
 		--package $(TARGET_DIR)/$(NAME)_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
 
 .PHONY: rpm
@@ -43,13 +51,13 @@ rpm: prep
 		--output-type rpm \
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
-		--version $(VERSION) \
+		--version $(RPM_VERSION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
 tar: prep
@@ -77,8 +85,29 @@ prep:
 	ln -sf /opt/aerospike/bin/aql $(BUILD_DIR)/usr/bin/aql
 
 
+
+# Staging for macOS installer: install to /usr/local/aerospike/bin with symlink at /usr/local/bin.
+.PHONY: prep-mac
+prep-mac:
+	install -d $(TARGET_DIR)
+	rm -rf $(MAC_ROOT)
+	install -d $(MAC_ROOT)/usr/local/aerospike/bin
+	install -d $(MAC_ROOT)/usr/local/bin
+	install -pm 755 $(TOP_DIR)/bin/aql $(MAC_ROOT)/usr/local/aerospike/bin/aql
+	ln -sf ../aerospike/bin/aql $(MAC_ROOT)/usr/local/bin/aql
+
+.PHONY: osx-pkg
+osx-pkg: prep-mac
+	pkgbuild \
+		--root $(MAC_ROOT) \
+		--identifier $(PKG_ID) \
+		--version $(MAC_VERSION) \
+		--install-location / \
+		$(MAC_PKG)
+
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
 	rm -rf $(BUILD_DIR)/opt
 	rm -rf $(BUILD_DIR)/var
+	rm -rf $(MAC_ROOT)
