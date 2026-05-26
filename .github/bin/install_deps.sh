@@ -6,7 +6,7 @@ export FPM_VERSION="1.17.0"
 BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel"
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
-BUILD_DEPS_UBUNTU26="libreadline9 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
+BUILD_DEPS_UBUNTU26="libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
 
 function build_libyaml_static() {
