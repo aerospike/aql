@@ -93,8 +93,11 @@ function install_deps_ubuntu26.04() {
 	rm -rf /var/lib/apt/lists/*
 	apt-get clean
 	apt-get update -o Acquire::Retries=5
+	# libterm-readline-perl-perl: provides Term::ReadLine so debconf can use
+	# the Readline frontend instead of printing frontend-init warnings.
 	apt-get install -y --no-install-recommends $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git curl binutils \
-		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev build-essential ruby-dev
+		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev build-essential ruby-dev \
+		libterm-readline-perl-perl
 	gem install fpm -v "$FPM_VERSION"
 	apt-get clean
 	rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*

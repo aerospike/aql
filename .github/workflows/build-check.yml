@@ -47,11 +47,12 @@ jobs:
           egress-policy: audit
 
       - name: Install prereqs
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           set -euo pipefail
           case "${{ matrix.distro }}" in
             ubuntu*|debian*)
-              export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends git ca-certificates
               ;;
