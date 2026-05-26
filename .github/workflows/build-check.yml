@@ -37,8 +37,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { distro: ubuntu24.04, container: 'ubuntu:noble-20251013', pkg: deb }
-          - { distro: el10,        container: 'redhat/ubi10:10.0',    pkg: rpm }
+          - { distro: ubuntu24.04, container: 'ubuntu:noble-20251013',      pkg: deb }
+          - { distro: ubuntu26.04, container: 'ubuntu:resolute-20260421',   pkg: deb }
+          - { distro: el10,        container: 'redhat/ubi10:10.0',          pkg: rpm }
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
