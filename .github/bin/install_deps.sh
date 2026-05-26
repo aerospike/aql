@@ -6,6 +6,7 @@ export FPM_VERSION="1.17.0"
 BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel"
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
+BUILD_DEPS_UBUNTU26="libreadline9 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf automake libtool libyaml-dev zlib1g-dev"
 
 function build_libyaml_static() {
@@ -83,6 +84,18 @@ function install_deps_ubuntu24.04() {
 	apt-get clean
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git curl binutils \
+		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev build-essential ruby-dev
+	gem install fpm -v "$FPM_VERSION"
+	apt-get clean
+	rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+}
+
+function install_deps_ubuntu26.04() {
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	# Ubuntu 26.04 ships readline 9 — use libreadline9 instead of libreadline8
+	apt-get install -y --no-install-recommends $BUILD_DEPS_UBUNTU26 ruby-rubygems make rpm git curl binutils \
 		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev build-essential ruby-dev
 	gem install fpm -v "$FPM_VERSION"
 	apt-get clean

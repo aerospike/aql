@@ -4,6 +4,7 @@ set -xeuo pipefail
 BUILD_DEPS_REDHAT="readline which autoconf libtool openssl-devel zlib-devel"
 BUILD_DEPS_AMAZON="readline which autoconf libtool readline-devel flex openssl-devel zlib-devel"
 BUILD_DEPS_UBUNTU="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
+BUILD_DEPS_UBUNTU26="libreadline9 libreadline-dev flex autoconf libtool libyaml-dev"
 BUILD_DEPS_DEBIAN="libreadline8 libreadline-dev flex autoconf libtool libyaml-dev"
 
 # Build libyaml from source with static library (RHEL/Amazon packages don't include .a files)
@@ -79,6 +80,17 @@ function install_deps_ubuntu24.04() {
   apt-get update -o Acquire::Retries=5
   apt -y install $BUILD_DEPS_UBUNTU ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev \
                lzma lzma-dev libffi-dev
+  gem install fpm -v 1.17.0
+  rm -rf /var/lib/apt/lists/*
+}
+
+function install_deps_ubuntu26.04() {
+  rm -rf /var/lib/apt/lists/*
+  apt-get clean
+  apt-get update -o Acquire::Retries=5
+  # Ubuntu 26.04 ships readline 9 — use libreadline9 instead of libreadline8
+  apt -y install $BUILD_DEPS_UBUNTU26 ruby-rubygems make rpm git curl binutils python3 python3-pip rsync libssl3 libssl-dev \
+               lzma liblzma-dev libffi-dev build-essential
   gem install fpm -v 1.17.0
   rm -rf /var/lib/apt/lists/*
 }
