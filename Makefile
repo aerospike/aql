@@ -101,19 +101,26 @@ else
   endif
 endif
 
-# Readline: on Linux always force static linking so the built binary has no
-# libreadline.so runtime dependency across any distro.
-# libreadline.a is available in all Docker images:
-#   Ubuntu/Debian  → libreadline-dev puts it in the multiarch lib dir
-#   RHEL           → built from source into /usr/lib
-# -Wl,-Bstatic/-Wl,-Bdynamic bracket just readline+history; libtinfo is then
-# linked dynamically (-ltinfo) to satisfy readline's tputs/tgetent references.
-# libtinfo.so.6 is a base system library present on all Linux distros.
-# macOS always links dynamically (Homebrew readline, no -Wl,-Bstatic support).
+# Readline: prefer static linking to eliminate the libreadline.so runtime dep.
+# Fall back to dynamic if libreadline.a is absent — RHEL 10+ dropped static
+# archives from readline-devel, so dynamic is the only option there.
+# qe-docker images (which build readline from source) always have the .a.
+# macOS: always dynamic (Homebrew; Apple ld has no -Wl,-Bstatic).
 ifeq ($(OS),Darwin)
   READLINE_LIB := -lreadline
 else
-  READLINE_LIB := -Wl,-Bstatic -lreadline -lhistory -Wl,-Bdynamic -ltinfo
+  _READLINE_A := $(firstword $(wildcard \
+      /usr/local/lib/libreadline.a \
+      /usr/lib/libreadline.a \
+      /usr/lib64/libreadline.a \
+      /usr/lib/$(shell uname -m)-linux-gnu/libreadline.a))
+  ifneq ($(_READLINE_A),)
+    # Static: bracket readline+history; tinfo resolved dynamically after -Wl,-Bdynamic.
+    READLINE_LIB := -Wl,-Bstatic -lreadline -lhistory -Wl,-Bdynamic -ltinfo
+  else
+    # Dynamic fallback: tinfo is satisfied transitively via libreadline.so.
+    READLINE_LIB := -lreadline -lhistory
+  endif
 endif
 
 LIBRARIES += $(LUA_LIB) -lpthread -lm $(READLINE_LIB) -lz
