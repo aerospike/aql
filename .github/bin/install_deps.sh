@@ -135,7 +135,9 @@ function install_deps_el10() {
 	# so the Makefile can static-link it (same approach as the qe-docker images).
 	dnf -y install ncurses-devel wget tar make gcc
 	local _rl_ver="8.2"
-	wget -q "http://ftp.gnu.org/gnu/readline/readline-${_rl_ver}.tar.gz" -P /tmp
+	local _rl_sha256="3feb7171f16a84ee82ca18a36d7b9be109a52c04f492a053331d7d1095007c35"
+	wget -q "https://ftp.gnu.org/gnu/readline/readline-${_rl_ver}.tar.gz" -P /tmp
+	echo "${_rl_sha256}  /tmp/readline-${_rl_ver}.tar.gz" | sha256sum -c -
 	tar -xzf "/tmp/readline-${_rl_ver}.tar.gz" -C /tmp
 	cd "/tmp/readline-${_rl_ver}"
 	./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib64 CFLAGS="-fPIC"

@@ -102,9 +102,9 @@ else
 endif
 
 # Readline: prefer static linking to eliminate the libreadline.so runtime dep.
-# Fall back to dynamic if libreadline.a is absent — RHEL 10+ dropped static
-# archives from readline-devel, so dynamic is the only option there.
-# qe-docker images (which build readline from source) always have the .a.
+# Fall back to dynamic if libreadline.a is absent — RHEL 10+ distro packages
+# dropped static archives from readline-devel, but CI builds readline from
+# source (install_deps_el10) so the .a is always available there.
 # macOS: always dynamic (Homebrew; Apple ld has no -Wl,-Bstatic).
 ifeq ($(OS),Darwin)
   READLINE_LIB := -lreadline
