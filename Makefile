@@ -111,7 +111,7 @@ endif
 # libtinfo.so.6 is a base system library present on all Linux distros.
 # macOS always links dynamically (Homebrew readline, no -Wl,-Bstatic support).
 ifeq ($(OS),Darwin)
-  READLINE_LIB := -lreadline -lhistory
+  READLINE_LIB := -lreadline
 else
   READLINE_LIB := -Wl,-Bstatic -lreadline -lhistory -Wl,-Bdynamic -ltinfo
 endif
