@@ -130,7 +130,21 @@ function install_deps_el10() {
 	dnf clean all
 	dnf -y update
 	yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/AppStream/$(uname -m)/os/Packages/f/flex-2.6.4-19.el10.$(uname -m).rpm"
-	yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/devel/$(uname -m)/os/Packages/r/readline-devel-8.2-11.el10.$(uname -m).rpm"
+	# readline-devel on RHEL 10 no longer ships libreadline.a (static archives
+	# were dropped from devel packages).  Build from source to get libreadline.a
+	# so the Makefile can static-link it (same approach as the qe-docker images).
+	dnf -y install ncurses-devel wget tar make gcc
+	local _rl_ver="8.2"
+	local _rl_sha256="3feb7171f16a84ee82ca18a36d7b9be109a52c04f492a053331d7d1095007c35"
+	wget -q "https://ftp.gnu.org/gnu/readline/readline-${_rl_ver}.tar.gz" -P /tmp
+	echo "${_rl_sha256}  /tmp/readline-${_rl_ver}.tar.gz" | sha256sum -c -
+	tar -xzf "/tmp/readline-${_rl_ver}.tar.gz" -C /tmp
+	cd "/tmp/readline-${_rl_ver}"
+	./configure --prefix=/usr --includedir=/usr/include --libdir=/usr/lib64 CFLAGS="-fPIC"
+	make -j"$(nproc)" SHLIB_LIBS="-lncurses -ltinfo"
+	make install
+	cd -
+	rm -rf "/tmp/readline-${_rl_ver}" "/tmp/readline-${_rl_ver}.tar.gz"
 	dnf -y install $BUILD_DEPS_REDHAT ruby ruby-devel rpmdevtools make git python3 python3-pip rsync
 	build_libyaml_static
 	gem install fpm -v "$FPM_VERSION"

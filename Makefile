@@ -101,9 +101,31 @@ else
   endif
 endif
 
-LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz
+# Readline: prefer static linking to eliminate the libreadline.so runtime dep.
+# Fall back to dynamic if libreadline.a is absent — RHEL 10+ distro packages
+# dropped static archives from readline-devel, but CI builds readline from
+# source (install_deps_el10) so the .a is always available there.
+# macOS: always dynamic (Homebrew; Apple ld has no -Wl,-Bstatic).
+ifeq ($(OS),Darwin)
+  READLINE_LIB := -lreadline
+else
+  _READLINE_A := $(firstword $(wildcard \
+      /usr/local/lib/libreadline.a \
+      /usr/lib/libreadline.a \
+      /usr/lib64/libreadline.a \
+      /usr/lib/$(shell uname -m)-linux-gnu/libreadline.a))
+  ifneq ($(_READLINE_A),)
+    # Static: bracket readline+history; tinfo resolved dynamically after -Wl,-Bdynamic.
+    READLINE_LIB := -Wl,-Bstatic -lreadline -lhistory -Wl,-Bdynamic -ltinfo
+  else
+    # Dynamic fallback: tinfo is satisfied transitively via libreadline.so.
+    READLINE_LIB := -lreadline -lhistory
+  endif
+endif
+
+LIBRARIES += $(LUA_LIB) -lpthread -lm $(READLINE_LIB) -lz
 ifneq ($(OS),Darwin)
-  LIBRARIES += -lhistory -lrt -ldl -lz
+  LIBRARIES += -lrt -ldl -lz
 endif
 
 # Static link libyaml to avoid runtime dependency
