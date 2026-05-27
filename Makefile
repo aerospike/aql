@@ -101,9 +101,24 @@ else
   endif
 endif
 
-LIBRARIES += $(LUA_LIB) -lpthread -lm -lreadline -lz
+# Readline: on Linux always force static linking so the built binary has no
+# libreadline.so runtime dependency across any distro.
+# libreadline.a is available in all Docker images:
+#   Ubuntu/Debian  → libreadline-dev puts it in the multiarch lib dir
+#   RHEL           → built from source into /usr/lib
+# -Wl,-Bstatic/-Wl,-Bdynamic bracket just readline+history; libtinfo is then
+# linked dynamically (-ltinfo) to satisfy readline's tputs/tgetent references.
+# libtinfo.so.6 is a base system library present on all Linux distros.
+# macOS always links dynamically (Homebrew readline, no -Wl,-Bstatic support).
+ifeq ($(OS),Darwin)
+  READLINE_LIB := -lreadline -lhistory
+else
+  READLINE_LIB := -Wl,-Bstatic -lreadline -lhistory -Wl,-Bdynamic -ltinfo
+endif
+
+LIBRARIES += $(LUA_LIB) -lpthread -lm $(READLINE_LIB) -lz
 ifneq ($(OS),Darwin)
-  LIBRARIES += -lhistory -lrt -ldl -lz
+  LIBRARIES += -lrt -ldl -lz
 endif
 
 # Static link libyaml to avoid runtime dependency
