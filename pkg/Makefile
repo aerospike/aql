@@ -4,6 +4,8 @@ TOP_DIR = $(PKG_DIR)/../target/"$(shell uname -s)-$(shell uname -m)"
 BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
+DOC_DIR = /opt/aerospike/doc/$(PACKAGE_NAME)
+MAC_DOC_DIR = /usr/local/aerospike/doc/$(PACKAGE_NAME)
 # Package variables
 PACKAGE_NAME = aql
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
@@ -40,6 +42,8 @@ deb: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
+		--after-install $(PKG_DIR)/postinst.sh \
+		--after-upgrade $(PKG_DIR)/postinst.sh \
 		--depends "libreadline8 | libreadline8t64" \
 		--package $(TARGET_DIR)/$(NAME)_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
 
@@ -57,6 +61,8 @@ rpm: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
+		--after-install $(PKG_DIR)/postinst.sh \
+		--after-upgrade $(PKG_DIR)/postinst.sh \
 		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
@@ -83,6 +89,8 @@ prep:
 	install -pm 755 $(TOP_DIR)/bin/aql $(BUILD_DIR)/opt/aerospike/bin
 	install -d $(BUILD_DIR)/usr/bin
 	ln -sf /opt/aerospike/bin/aql $(BUILD_DIR)/usr/bin/aql
+	install -d $(BUILD_DIR)$(DOC_DIR)
+	install -pm 644 $(PKG_DIR)/astools.conf.sample $(BUILD_DIR)$(DOC_DIR)/astools.conf.sample
 
 
 
@@ -95,6 +103,8 @@ prep-mac:
 	install -d $(MAC_ROOT)/usr/local/bin
 	install -pm 755 $(TOP_DIR)/bin/aql $(MAC_ROOT)/usr/local/aerospike/bin/aql
 	ln -sf ../aerospike/bin/aql $(MAC_ROOT)/usr/local/bin/aql
+	install -d $(MAC_ROOT)$(MAC_DOC_DIR)
+	install -pm 644 $(PKG_DIR)/astools.conf.sample $(MAC_ROOT)$(MAC_DOC_DIR)/astools.conf.sample
 
 .PHONY: osx-pkg
 osx-pkg: prep-mac
@@ -103,6 +113,7 @@ osx-pkg: prep-mac
 		--identifier $(PKG_ID) \
 		--version $(MAC_VERSION) \
 		--install-location / \
+		--scripts $(PKG_DIR)/mac-scripts \
 		$(MAC_PKG)
 
 .PHONY: clean
