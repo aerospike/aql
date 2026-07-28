@@ -102,10 +102,12 @@ else
 endif
 
 # Readline: prefer static linking to eliminate the libreadline.so runtime dep.
-# Fall back to dynamic if libreadline.a is absent — RHEL 10+ distro packages
-# dropped static archives from readline-devel, but CI builds readline from
-# source (install_deps_el10) so the .a is always available there.
-# macOS: always dynamic (Homebrew; Apple ld has no -Wl,-Bstatic).
+# Fall back to dynamic if libreadline.a is absent. Debian/Ubuntu libreadline-dev
+# ships the .a; RHEL-family readline-devel does not, so CI builds readline from
+# source there (build_readline_static in install_deps.sh). build_package.sh
+# rejects binaries that link readline dynamically, keeping packages airgap-safe.
+# macOS: always dynamic; -lreadline resolves to the system libedit shim
+# (SDK libreadline.tbd -> libedit.tbd), present on every macOS.
 ifeq ($(OS),Darwin)
   READLINE_LIB := -lreadline
 else

@@ -17,6 +17,11 @@ function build_packages() {
 	make clean
 	make
 
+	if ldd "target/$(uname -s)-$(uname -m)/bin/aql" | grep readline; then
+		echo "aql dynamically links readline; packages must ship a static-readline binary" >&2
+		return 1
+	fi
+
 	echo "build_package.sh version: ${VERSION}"
 
 	# package
