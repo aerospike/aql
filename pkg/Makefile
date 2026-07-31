@@ -18,6 +18,8 @@ URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
 RPM_VERSION := $(subst -,_,$(VERSION))
+# rpm Release / deb revision: the "-1" after the version in package names.
+ITERATION ?= 1
 # pkgbuild rejects '-' and '_' in --version; normalize pre-release tags to '.' (see CI .pkg rename).
 MAC_VERSION := $(subst _,.,$(subst -,.,$(VERSION)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
@@ -37,6 +39,7 @@ deb: prep
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
 		--version $(VERSION) \
+		--iteration $(ITERATION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
@@ -44,7 +47,7 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
+		--package $(TARGET_DIR)/$(NAME)_$(VERSION)-$(ITERATION)_$(BUILD_DISTRO)_$(ARCH).deb
 
 .PHONY: rpm
 rpm: prep
@@ -55,6 +58,7 @@ rpm: prep
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
 		--version $(RPM_VERSION) \
+		--iteration $(ITERATION) \
 		--maintainer $(MAINTAINER) \
 		--depends "openssl-libs" \
 		--depends "ncurses-libs" \
@@ -64,7 +68,7 @@ rpm: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION)-$(ITERATION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
 tar: prep
