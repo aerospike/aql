@@ -156,7 +156,18 @@ LIBRARIES += $(LIBYAML_STATIC)
 
 # Embed aql --version string: default from git; CI passes AQL_VERSION to match VERSION.
 AQL_VERSION ?= $(shell git describe --tags --always)
-CFLAGS += -DAQL_VERSION=\"$(AQL_VERSION)\"
+# What the binary prints. "rcN" is a build detail: it lives in the package
+# iteration, not in the product version. A passing rc is promoted to GA with no
+# rebuild, so the binary that ships as GA must not call itself a release
+# candidate -- it is the same file either way. The packaged version is
+# untouched: it stays the git tag and the input pkg/Makefile derives names from.
+AQL_VERSION_EMBED := $(shell $(CURDIR)/.github/bin/pkg_release.sh '$(AQL_VERSION)' version)
+# An unresolvable script path would leave this empty and embed a blank
+# version, which no test asserts on -- fail the build instead.
+ifeq ($(strip $(AQL_VERSION_EMBED)),)
+$(error could not derive AQL_VERSION_EMBED from AQL_VERSION='$(AQL_VERSION)' -- .github/bin/pkg_release.sh not found or failed)
+endif
+CFLAGS += -DAQL_VERSION=\"$(AQL_VERSION_EMBED)\"
 
 ##
 ## MAIN
