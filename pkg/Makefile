@@ -18,8 +18,7 @@ URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
 # Package names never carry the "rcN" pre-release tag: rcN becomes the package
-# iteration, so 8.0.4-rc2 packages as version 8.0.4 iteration 2. VERSION itself
-# is untouched -- it is the git tag and what aql --version reports.
+# iteration, so 9.2.10-rc2 packages as version 9.2.10 iteration 2.
 PKG_RELEASE_SH = $(PKG_DIR)/../.github/bin/pkg_release.sh
 PKG_VERSION := $(shell $(PKG_RELEASE_SH) '$(VERSION)' version)
 ITERATION ?= $(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration)
