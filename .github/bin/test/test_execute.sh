@@ -7,10 +7,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # shellcheck source=.github/bin/test/version_lib.sh
 . "$SCRIPT_DIR/version_lib.sh"
 
-aql --help
-aql --version
-
 expected="$(expected_version "$REPO_ROOT/VERSION")"
+
+aql --help >/dev/null
 out="$(aql --version 2>&1)"
 assert_version_output "$out" "$expected"
 echo "aql reports $(expected_version_lines "$expected" | tr '\n' ' ')(from $expected)"
