@@ -25,7 +25,7 @@ the VERSION file on `MAJOR.MINOR.PATCH`, so a run wired to the wrong workflow ou
 rather than testing against whatever it was handed.
 
 ```
-EXPECTED_VERSION=9.2.10-rc1 .github/bin/test/test_execute.sh
+EXPECTED_VERSION=9.2.9-abc123def .github/bin/test/test_execute.sh
 ```
 
 `test_astools_conf.bats` covers the packaged `astools.conf` handling.
