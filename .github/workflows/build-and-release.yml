@@ -168,11 +168,7 @@ jobs:
           SKIP_TAGGING: ${{ inputs.skip_tagging }}
         run: |
           set -euo pipefail
-          # VERSION is the release identity (git tag, release bundle, build
-          # number). BUILD_VERSION is what artifacts are named from and what
-          # the binary is stamped with. They coincide on a main release; on a
-          # dev build the sha alone pins it, so the branch slug and the rcN
-          # stay out of package names and the iteration stays 1.
+          # See the VERSION / BUILD_VERSION contract in this file's header.
           if [[ "${GITHUB_REF}" == "refs/heads/main" && "${SKIP_TAGGING}" != "true" ]]; then
             VERSION="${BASE}"
             BUILD_VERSION="${BASE}"
@@ -187,9 +183,6 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build_version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
 
-      # rcN never reaches a file name or image tag: it becomes the package
-      # iteration (rpm Release / deb revision), so 9.2.10-rc2 packages as
-      # version 9.2.10, iteration 2, release 9.2.10-2. No rcN means iteration 1.
       - name: Derive package version and iteration
         id: release
         env:
@@ -348,7 +341,8 @@ jobs:
           out=$(./aql --version 2>&1)
           printf '%s\n' "$out"
           . "${GITHUB_WORKSPACE}/.github/bin/test/version_lib.sh"
-          assert_version_output "$out" "$(expected_version "${GITHUB_WORKSPACE}/VERSION")"
+          expected=$(expected_version "${GITHUB_WORKSPACE}/VERSION")
+          assert_version_output "$out" "$expected"
 
       - name: Create .pkg
         env:
@@ -377,9 +371,7 @@ jobs:
           echo "PKG_NAME=$(basename "${pkgs}")" >> "$GITHUB_ENV"
           echo "==> built $(basename "${pkgs}")"
           # Platform suffix for the upload-artifact container below, in the same
-          # macos<major>-<arch> terms as the pkg it carries. Unique per matrix leg
-          # (macos14-arm64, macos15-arm64, macos26-arm64, macos15-x86_64), which
-          # is all the container name has to guarantee.
+          # macos<major>-<arch> terms as the pkg it carries.
           # Assigned on its own line: a failing command substitution inside an
           # argument does not trip `set -e`, which would name the artifact
           # container "...--$(uname -m)" and let the leg pass.
@@ -920,8 +912,8 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           set -euo pipefail
-          # docker-build.sh folds any "rcN" in VERSION into the iteration, so
-          # the image tags carry RELEASE (e.g. <version>-2), never "rc2".
+          # docker-build.sh folds the rcN in BUILD_VERSION into the iteration,
+          # so image tags carry <version>-<iteration>, never "rc2".
           docker/docker-build.sh -t \
             -v "${BUILD_VERSION}" \
             -a ${{ matrix.arch }} \
