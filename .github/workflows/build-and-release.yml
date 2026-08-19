@@ -149,8 +149,6 @@ jobs:
     outputs:
       VERSION: ${{ steps.compute.outputs.version }}
       BUILD_VERSION: ${{ steps.compute.outputs.build_version }}
-      PKG_VERSION: ${{ steps.release.outputs.PKG_VERSION }}
-      ITERATION: ${{ steps.release.outputs.ITERATION }}
       RELEASE: ${{ steps.release.outputs.RELEASE }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
