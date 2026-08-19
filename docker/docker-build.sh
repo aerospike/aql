@@ -503,7 +503,12 @@ function main() {
     -p) mode="push" ; shift ;;
     -M | --manifest) mode="manifest" ; shift ;;
     -v | --version)       VERSION="$2"             ; shift 2 ;;
-    -i | --iteration)     ITERATION="$2"           ; shift 2 ;;
+    -i | --iteration)
+      if [[ ! "${2:-}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "--iteration must be a positive integer with no leading zero, got '${2:-}'"
+        exit 1
+      fi
+      ITERATION="$2"; shift 2 ;;
     -r | --registry)      REGISTRY_PREFIXES+=("$2") ; shift 2 ;;
     -a | --arch)          arch_filters+=("$2")     ; shift 2 ;;
     -u | --packages-url)  pkg_url="$2"             ; shift 2 ;;
