@@ -155,6 +155,8 @@ endif
 LIBRARIES += $(LIBYAML_STATIC)
 
 # Embed aql --version string: default from git; CI passes AQL_VERSION to match VERSION.
+# Embedded whole: print_version() splits it, so 9.2.10-rc1 reports
+# "Version 9.2.10 / Build rc1".
 AQL_VERSION ?= $(shell git describe --tags --always)
 CFLAGS += -DAQL_VERSION=\"$(AQL_VERSION)\"
 
