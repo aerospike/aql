@@ -322,7 +322,11 @@ jobs:
         with:
           path: |
             ${{ matrix.target-dir }}/aql
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ needs.get-version.outputs.VERSION }}
+          # github.sha, not VERSION alone: keying on VERSION served a stale
+          # binary for every source change within one rc, because the build step
+          # below is skipped on a cache hit. matrix.os is already in the key, so
+          # the only hits given up are cross-commit ones -- the unsafe ones.
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ needs.get-version.outputs.VERSION }}-${{ github.sha }}
 
       - name: Build mac aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
