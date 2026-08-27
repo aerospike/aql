@@ -119,13 +119,31 @@ key_init(as_error* err, as_key* key, char* ns, char* set, asql_value* in_key)
 			}
 			k = as_key_init_digest(key, ns, set, dig);
 		}
-		else if (in_key->vt == ASQL_VALUE_TYPE_EDIGEST) {
-			as_digest_value dig;
-			uint32_t dig_size;
-			cf_b64_decode(in_key->u.str, (uint32_t)strlen(in_key->u.str), dig,
-					&dig_size);
-			k = as_key_init_digest(key, ns, set, dig);
-		}
+    else if (in_key->vt == ASQL_VALUE_TYPE_EDIGEST) {
+      as_digest_value dig;
+      uint32_t dig_size;
+      uint32_t in_len = (uint32_t)strlen(in_key->u.str);
+      if (in_len % 4 != 0) {
+        as_error_update(
+            err, AEROSPIKE_ERR_CLIENT,
+            "Edigest length must be a multiple of 4 (base64-padded), got %u: ('%s','%s','%s')",
+            in_len, ns, set, in_key->u.str);
+        return 1;
+      }
+
+      uint32_t scratch_size = cf_b64_decoded_buf_size(in_len);
+      uint8_t *scratch = (uint8_t *)alloca(scratch_size);
+      cf_b64_decode(in_key->u.str, in_len, scratch, &dig_size);
+      if (dig_size != sizeof(dig)) {
+        as_error_update(
+            err, AEROSPIKE_ERR_CLIENT,
+            "Edigest decoded to %u bytes, expected %zu: ('%s','%s','%s')",
+            dig_size, sizeof(dig), ns, set, in_key->u.str);
+        return 1;
+      }
+      memcpy(dig, scratch, sizeof(dig));
+      k = as_key_init_digest(key, ns, set, dig);
+    }
 		else {
 			k = as_key_init_strp(key, ns, set, in_key->u.str, false);
 		}
