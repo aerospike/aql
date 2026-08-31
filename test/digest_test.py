@@ -36,6 +36,20 @@ BIN_NAME_COMMANDS = [
     ("insert", "insert into test.SET (PK, {}) values ('key0', 1)"),
 ]
 
+NON_STRING_VALUES = [
+    ("null", "null"),
+    ("true", "true"),
+    ("false", "false"),
+    ("float", "1.5"),
+    ("integer", "123"),
+]
+
+DIGEST_COMMANDS = [
+    ("select", "select * from test.SET where {} = {}"),
+    ("delete", "delete from test.SET where {} = {}"),
+    ("execute", "execute test1.foo() on test.SET where {} = {}"),
+]
+
 
 class DigestPositiveTest(unittest.TestCase):
     @classmethod
@@ -83,6 +97,24 @@ class DigestPositiveTest(unittest.TestCase):
 
         with self.assertRaises(aerospike.exception.RecordNotFound):
             utils.as_client.get(("test", utils.SET_NAME, "key99"))
+
+    def test_integer_pk_round_trip(self):
+        cmd = "insert into test.{} (PK, str) values (12345, 'int-pk')".format(
+            utils.SET_NAME
+        )
+        self.assertRegex(self.run_aql(cmd), "1 record affected")
+
+        cmd = "select * from test.{} where pk = 12345".format(utils.SET_NAME)
+        self.assertRegex(self.run_aql(cmd), "1 row in set")
+
+    def test_insert_null_bin(self):
+        cmd = "insert into test.{} (PK, str, a-int) values ('null-bin', null, 1)"
+        self.assertRegex(self.run_aql(cmd.format(utils.SET_NAME)),
+                         "1 record affected")
+
+        rec = utils.as_client.get(("test", utils.SET_NAME, "null-bin"))
+        self.assertNotIn("str", rec[2])
+        self.assertEqual(rec[2]["a-int"], 1)
 
     def test_desc_module(self):
         cmd = "register module '{}'".format(utils.absolute_path("lua", "test1.lua"))
@@ -195,6 +227,81 @@ class DigestNegativeTest(unittest.TestCase):
         self.assertIn(
             "Edigest must be 28 base64 characters, got 65536", self.run_aql(cmd)
         )
+
+    @parameterized.expand(
+        [
+            (cmd_name + " " + kind + " " + val_name, cmd, kind, value)
+            for cmd_name, cmd in DIGEST_COMMANDS
+            for kind in ["digest", "edigest"]
+            for val_name, value in NON_STRING_VALUES
+        ]
+    )
+    def test_digest_must_be_a_string(self, _, cmd, kind, value):
+        cmd = cmd.format(kind, value).replace("test.SET", "test." + utils.SET_NAME)
+        self.assertIn(
+            "{} must be a string".format(kind.capitalize()), self.run_aql(cmd)
+        )
+
+    @parameterized.expand(
+        [
+            ("true", "true"),
+            ("false", "false"),
+            ("float", "1.5"),
+        ]
+    )
+    def test_select_by_pk_bad_type(self, _, value):
+        cmd = "select * from test.{} where pk = {}".format(utils.SET_NAME, value)
+        self.assertIn(
+            "Primary key must be a string or an integer", self.run_aql(cmd)
+        )
+
+    def test_select_by_null_pk(self):
+        cmd = "select * from test.{} where pk = null".format(utils.SET_NAME)
+        self.assertIn(
+            "Primary key must be a string or an integer", self.run_aql(cmd)
+        )
+
+    @parameterized.expand(
+        [
+            ("null", "null"),
+            ("true", "true"),
+            ("false", "false"),
+            ("float", "1.5"),
+        ]
+    )
+    def test_execute_on_pk_bad_type(self, _, value):
+        cmd = "execute test1.foo() on test.{} where pk = {}".format(
+            utils.SET_NAME, value
+        )
+        self.assertIn(
+            "Primary key must be a string or an integer", self.run_aql(cmd)
+        )
+
+    @parameterized.expand(
+        [
+            ("true", "true"),
+            ("false", "false"),
+        ]
+    )
+    def test_insert_with_pk_bad_type(self, _, value):
+        cmd = "insert into test.{} (PK, str) values ({}, '1')".format(
+            utils.SET_NAME, value
+        )
+        self.assertIn(
+            "Primary key must be a string or an integer", self.run_aql(cmd)
+        )
+
+    def test_insert_with_null_pk(self):
+        cmd = "insert into test.{} (PK, str) values (null, '1')".format(
+            utils.SET_NAME
+        )
+        self.assertIn("Primary key must not be null", self.run_aql(cmd))
+
+    def test_insert_with_float_pk(self):
+        cmd = "insert into test.{} (PK, str) values (1.5, '1')".format(
+            utils.SET_NAME
+        )
+        self.assertIn("PK cannot be floating point value", self.run_aql(cmd))
 
     @parameterized.expand(BIN_NAME_COMMANDS)
     def test_long_bin_name(self, _, cmd):

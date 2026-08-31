@@ -107,6 +107,20 @@ key_init(as_error* err, as_key* key, char* ns, char* set, asql_value* in_key)
 		return 1;
 	}
 
+	if ((in_key->vt == ASQL_VALUE_TYPE_DIGEST
+			|| in_key->vt == ASQL_VALUE_TYPE_EDIGEST)
+			&& in_key->type != AS_STRING) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT, "%s must be a string",
+				in_key->vt == ASQL_VALUE_TYPE_DIGEST ? "Digest" : "Edigest");
+		return 1;
+	}
+
+	if (in_key->type == AS_STRING && in_key->u.str == NULL) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+				"Primary key must not be null");
+		return 1;
+	}
+
 	if (in_key->type == AS_STRING) {
 		as_key* k = NULL;
 		if (in_key->vt == ASQL_VALUE_TYPE_DIGEST) {
@@ -146,6 +160,11 @@ key_init(as_error* err, as_key* key, char* ns, char* set, asql_value* in_key)
 					in_key->u.i64);
 			return 1;
 		}
+	}
+	else {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+				"Primary key must be a string or an integer");
+		return 1;
 	}
 
 	return 0;
