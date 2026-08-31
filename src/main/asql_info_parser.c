@@ -34,9 +34,8 @@
 #include <aerospike/as_string.h>
 #include <aerospike/as_udf.h>
 
-#include <citrusleaf/cf_b64.h>
-
 #include <asql.h>
+#include <asql_decode.h>
 #include <asql_info.h>
 
 #include "renderer/table.h"
@@ -53,7 +52,7 @@
 
 static bool value_parser(as_hashmap* map, const char* req, const as_val* name, const char* value);
 static bool pair_parser(as_hashmap* map, const char* req, const char* pair);
-static char* pair_decode_parser(as_hashmap* map, const char* req, const char* pair);
+static void pair_decode_parser(as_hashmap* map, const char* req, const char* pair);
 
 //==========================================================
 // Public API.
@@ -319,29 +318,21 @@ value_parser(as_hashmap* map, const char* req, const as_val* name,
 // Local Helpers.
 //
 
-static char*
+static void
 pair_decode_parser(as_hashmap* map, const char* req, const char* pair)
 {
 	char* name = (char*)pair;
 	char* delim = strstr(name, "=");
-	char* value = NULL;
 
-	if (delim) {
-		delim[0] = '\0';
-		value = delim + 1;
+	if (delim == NULL) {
+		return;
 	}
 
-	name = strdup(name);
-	value = strdup(value);
+	delim[0] = '\0';
 
-	uint32_t len = strlen(value);
-	uint8_t* decode_buf = (uint8_t*)malloc(cf_b64_decoded_buf_size(len));
-	cf_b64_decode(value, len, decode_buf, NULL);
+	char* decoded = asql_b64_decode_str(delim + 1, NULL);
 
-	value_parser(map, req, (as_val*)as_string_new(name, true),
-			(char*)decode_buf);
-
-	return (char*)decode_buf;
+	value_parser(map, req, (as_val*)as_string_new_strdup(name), decoded);
 }
 
 static bool

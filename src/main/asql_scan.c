@@ -122,9 +122,7 @@ scan_select(asql_config* c, scan_config* s)
 
 			char* bname = as_vector_get_ptr(s->s.bnames, i);
 
-			if (strlen(bname) > AS_BIN_NAME_MAX_LEN) {
-				as_error_update(&err, AEROSPIKE_ERR_CLIENT,
-				                "Bin name is too long: '%s'", bname);
+			if (!asql_bin_name_check(&err, bname)) {
 				break;
 			}
 			as_scan_select(&scan, bname);
