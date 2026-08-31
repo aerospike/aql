@@ -16,6 +16,17 @@ DIGEST_B64 = base64.b64encode(DIGEST).decode()
 DELETE_DIGEST = bytes(aerospike.calc_digest("test", utils.SET_NAME, "key99"))
 DELETE_B64 = base64.b64encode(DELETE_DIGEST).decode()
 
+B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+
+def flip_unused_pad_bit(encoded: str) -> str:
+    last = len(encoded) - 2
+    flipped = B64_ALPHABET[B64_ALPHABET.index(encoded[last]) ^ 1]
+    return encoded[:last] + flipped + encoded[last + 1:]
+
+
+DIGEST_B64_PAD_BITS = flip_unused_pad_bit(DIGEST_B64)
+
 BIN_NAME_COMMANDS = [
     ("select by digest",
             "select {} from test.SET where digest = '" + DIGEST_HEX + "'"),
@@ -160,6 +171,19 @@ class DigestNegativeTest(unittest.TestCase):
             "Edigest is not a valid base64 encoded digest", self.run_aql(cmd)
         )
 
+    def test_select_by_edigest_unused_pad_bits(self):
+        self.assertNotEqual(DIGEST_B64_PAD_BITS, DIGEST_B64)
+        self.assertEqual(
+            base64.b64decode(DIGEST_B64_PAD_BITS), base64.b64decode(DIGEST_B64)
+        )
+
+        cmd = "select * from test.{} where edigest = '{}'".format(
+            utils.SET_NAME, DIGEST_B64_PAD_BITS
+        )
+        self.assertIn(
+            "Edigest is not canonically base64 encoded", self.run_aql(cmd)
+        )
+
     @parameterized.expand(
         [
             ("delete", "delete from test.{} where edigest = '{}'"),
@@ -185,7 +209,7 @@ class DigestNegativeTest(unittest.TestCase):
     @parameterized.expand(BIN_NAME_COMMANDS)
     def test_max_length_bin_name_is_accepted(self, _, cmd):
         cmd = cmd.format("b" * 15).replace("test.SET", "test." + utils.SET_NAME)
-        self.assertNotIn("Bin name", self.run_aql(cmd))
+        self.assertEqual(self.run_aql(cmd), "")
 
 
 if __name__ == "__main__":

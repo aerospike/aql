@@ -108,6 +108,16 @@ asql_digest_from_b64(as_error* err, as_digest_value dig, const char* in)
 		return false;
 	}
 
+	char reencoded[((sizeof(as_digest_value) + 2) / 3) * 4];
+
+	cf_b64_encode(buf, sizeof(as_digest_value), reencoded);
+
+	if (memcmp(reencoded, in, sizeof(reencoded)) != 0) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+				"Edigest is not canonically base64 encoded: '%s'", in);
+		return false;
+	}
+
 	memcpy(dig, buf, sizeof(as_digest_value));
 
 	return true;
