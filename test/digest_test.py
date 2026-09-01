@@ -36,6 +36,16 @@ BIN_NAME_COMMANDS = [
     ("insert", "insert into test.SET (PK, {}) values ('key0', 1)"),
 ]
 
+MULTI_BIN_NAME_COMMANDS = [
+    ("select by digest",
+            "select str, {} from test.SET where digest = '" + DIGEST_HEX + "'"),
+    ("select by pk", "select str, {} from test.SET where pk = 'key0'"),
+    ("scan", "select str, {} from test.SET"),
+    ("query", "select str, {} from test.SET where a-int = 0"),
+    ("insert",
+            "insert into test.SET (PK, str, {}) values ('key0', '1', 1)"),
+]
+
 NON_STRING_VALUES = [
     ("null", "null"),
     ("true", "true"),
@@ -324,6 +334,21 @@ class DigestNegativeTest(unittest.TestCase):
 
     @parameterized.expand(BIN_NAME_COMMANDS)
     def test_max_length_bin_name_is_accepted(self, _, cmd):
+        cmd = cmd.format("b" * 15).replace("test.SET", "test." + utils.SET_NAME)
+        self.assertEqual(self.run_aql(cmd), "")
+
+    @parameterized.expand(MULTI_BIN_NAME_COMMANDS)
+    def test_long_bin_name_after_valid_name(self, _, cmd):
+        cmd = cmd.format("b" * 16).replace("test.SET", "test." + utils.SET_NAME)
+        self.assertIn("Bin name is too long", self.run_aql(cmd))
+
+    @parameterized.expand(MULTI_BIN_NAME_COMMANDS)
+    def test_empty_bin_name_after_valid_name(self, _, cmd):
+        cmd = cmd.format("''").replace("test.SET", "test." + utils.SET_NAME)
+        self.assertIn("Bin name is empty", self.run_aql(cmd))
+
+    @parameterized.expand(MULTI_BIN_NAME_COMMANDS)
+    def test_two_max_length_bin_names_are_accepted(self, _, cmd):
         cmd = cmd.format("b" * 15).replace("test.SET", "test." + utils.SET_NAME)
         self.assertEqual(self.run_aql(cmd), "")
 
