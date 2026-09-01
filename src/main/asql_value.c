@@ -19,6 +19,10 @@
 // Includes.
 //
 
+#include <string.h>
+
+#include <aerospike/as_bin.h>
+
 #include <json.h>
 #include <jansson.h>
 #include <asql_value.h>
@@ -78,6 +82,25 @@ static asql_type_t asql_types[] = {
 //=========================================================
 // Public API.
 //
+
+bool
+asql_bin_name_check(as_error* err, const char* name)
+{
+	size_t len = name ? strlen(name) : 0;
+
+	if (len == 0) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT, "Bin name is empty");
+		return false;
+	}
+
+	if (len > AS_BIN_NAME_MAX_LEN) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+		                "Bin name is too long: '%s'", name);
+		return false;
+	}
+
+	return true;
+}
 
 int
 asql_set_args(as_error* err, as_vector* udfargs, as_arraylist* arglist)

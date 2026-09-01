@@ -64,6 +64,7 @@ typedef char* asql_name;
 // Public API.
 //
 
+bool asql_bin_name_check(as_error* err, const char* name);
 int asql_set_args(as_error* err, as_vector *udfargs, as_arraylist* arglist);
 int asql_parse_value_as(char* s, asql_value* value, asql_value_type_t vtype);
 void asql_free_value(void*);

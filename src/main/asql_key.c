@@ -21,7 +21,6 @@
 
 
 #include <asql_log.h>
-#include <citrusleaf/cf_b64.h>
 
 #include <aerospike/aerospike.h>
 #include <aerospike/aerospike_key.h>
@@ -40,6 +39,7 @@
 #include <jansson.h>
 
 #include <asql.h>
+#include <asql_decode.h>
 #include <asql_explain.h>
 #include <asql_key.h>
 
@@ -107,23 +107,38 @@ key_init(as_error* err, as_key* key, char* ns, char* set, asql_value* in_key)
 		return 1;
 	}
 
+	if ((in_key->vt == ASQL_VALUE_TYPE_DIGEST
+			|| in_key->vt == ASQL_VALUE_TYPE_EDIGEST)
+			&& in_key->type != AS_STRING) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT, "%s must be a string",
+				in_key->vt == ASQL_VALUE_TYPE_DIGEST ? "Digest" : "Edigest");
+		return 1;
+	}
+
+	if (in_key->type == AS_STRING && in_key->u.str == NULL) {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+				"Primary key must not be null");
+		return 1;
+	}
+
 	if (in_key->type == AS_STRING) {
 		as_key* k = NULL;
 		if (in_key->vt == ASQL_VALUE_TYPE_DIGEST) {
 			as_digest_value dig;
-			int j = 0;
-			for (int i = 0; i < 40; i += 2) {
-				char d[5];
-				sprintf(d, "0x%c%c", in_key->u.str[i], in_key->u.str[i + 1]);
-				dig[j++] = strtol(d, NULL, 16);
+
+			if (!asql_digest_from_hex(err, dig, in_key->u.str)) {
+				return 1;
 			}
+
 			k = as_key_init_digest(key, ns, set, dig);
 		}
 		else if (in_key->vt == ASQL_VALUE_TYPE_EDIGEST) {
 			as_digest_value dig;
-			uint32_t dig_size;
-			cf_b64_decode(in_key->u.str, (uint32_t)strlen(in_key->u.str), dig,
-					&dig_size);
+
+			if (!asql_digest_from_b64(err, dig, in_key->u.str)) {
+				return 1;
+			}
+
 			k = as_key_init_digest(key, ns, set, dig);
 		}
 		else {
@@ -145,6 +160,11 @@ key_init(as_error* err, as_key* key, char* ns, char* set, asql_value* in_key)
 					in_key->u.i64);
 			return 1;
 		}
+	}
+	else {
+		as_error_update(err, AEROSPIKE_ERR_CLIENT,
+				"Primary key must be a string or an integer");
+		return 1;
 	}
 
 	return 0;
@@ -198,16 +218,17 @@ key_select(asql_config* c, pk_config* p)
 
 		for (int i = 0; i < p->s.bnames->size; i++) {
 			char* bname = as_vector_get_ptr(p->s.bnames, i);
-			if (strlen(bname) > AS_BIN_NAME_MAX_LEN) {
-				as_error_update(&err, AEROSPIKE_ERR_CLIENT,
-				                "Bin name is too long: '%s'", bname);
+			if (!asql_bin_name_check(&err, bname)) {
 				break;
 			}
 			bins[i] = bname;
 		}
 		bins[p->s.bnames->size] = NULL;
 
-		aerospike_key_select(g_aerospike, &err, &read_policy, &key, bins, &rec);
+		if (err.code == AEROSPIKE_OK) {
+			aerospike_key_select(g_aerospike, &err, &read_policy, &key, bins,
+			                     &rec);
+		}
 	}
 
 	// Special case for when the key is already known.
@@ -397,9 +418,7 @@ key_write(asql_config* c, pk_config* p)
 		char* name = as_vector_get_ptr(p->i.bnames, i);
 		asql_value* value = as_vector_get(p->i.values, i);
 
-		if (strlen(name) > AS_BIN_NAME_MAX_LEN) {
-			as_error_update(&err, AEROSPIKE_ERR_CLIENT,
-			                "Bin name is too long: '%s'", name);
+		if (!asql_bin_name_check(&err, name)) {
 			break;
 		}
 

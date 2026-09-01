@@ -175,6 +175,7 @@ OBJECTS =
 OBJECTS += main.o
 OBJECTS += asql.o
 OBJECTS += $(LEXER_SRC:.c=.o)
+OBJECTS += asql_decode.o
 OBJECTS += asql_explain.o
 OBJECTS += asql_info.o
 OBJECTS += asql_info_parser.o

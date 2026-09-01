@@ -677,6 +677,7 @@ parse_value_list(tokenizer* tknzr, as_vector* v)
 		if (!strcasecmp(tknzr->tok, "NULL")) {
 			asql_value value;
 			value.type = AS_STRING;
+			value.vt = ASQL_VALUE_TYPE_NONE;
 			value.u.str = NULL;
 			// "NULL" is empty bin
 			as_vector_append(v, &value);
