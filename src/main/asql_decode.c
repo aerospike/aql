@@ -35,6 +35,8 @@
 
 #define DIGEST_HEX_LEN ((uint32_t)(sizeof(as_digest_value) * 2))
 
+#define DIGEST_B64_LEN ((uint32_t)(((sizeof(as_digest_value) + 2) / 3) * 4))
+
 // cf_b64_decode() writes whole three byte groups, so decoding an encoded digest
 // needs up to two bytes more than the digest itself.
 #define DIGEST_DECODE_BUF_SIZE (sizeof(as_digest_value) + 2)
@@ -87,7 +89,7 @@ asql_digest_from_hex(as_error* err, as_digest_value dig, const char* in)
 bool
 asql_digest_from_b64(as_error* err, as_digest_value dig, const char* in)
 {
-	uint32_t encoded_len = cf_b64_encoded_len(sizeof(as_digest_value));
+	uint32_t encoded_len = DIGEST_B64_LEN;
 	size_t in_len = in ? strlen(in) : 0;
 
 	if (in_len != encoded_len) {
@@ -108,7 +110,7 @@ asql_digest_from_b64(as_error* err, as_digest_value dig, const char* in)
 		return false;
 	}
 
-	char reencoded[((sizeof(as_digest_value) + 2) / 3) * 4];
+	char reencoded[DIGEST_B64_LEN];
 
 	cf_b64_encode(buf, sizeof(as_digest_value), reencoded);
 
