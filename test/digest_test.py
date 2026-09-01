@@ -123,6 +123,15 @@ class DigestPositiveTest(unittest.TestCase):
         cmd = "desc module test1.lua"
         self.assertRegex(self.run_aql(cmd), "function")
 
+    def test_execute_with_null_udf_arg(self):
+        cmd = "register module '{}'".format(utils.absolute_path("lua", "test1.lua"))
+        self.assertRegex(self.run_aql(cmd), "1 module added")
+
+        cmd = "execute test1.arg_types(null, 'x') on test.{} where PK = 'key0'".format(
+            utils.SET_NAME
+        )
+        self.assertRegex(self.run_aql(cmd), "nil/string")
+
 
 class DigestNegativeTest(unittest.TestCase):
     @classmethod

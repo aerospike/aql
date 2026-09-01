@@ -126,6 +126,11 @@ asql_set_args(as_error* err, as_vector* udfargs, as_arraylist* arglist)
 			case AS_STRING: {
 				char* str = value->u.str;
 
+				if (!str) {
+					as_arraylist_append(arglist, (as_val*)&as_nil);
+					break;
+				}
+
 				// TODO: In-band type to be deprecated in favor
 				// of ASQL internal value type.
 				if (!strncmp(str, "JSON", 4)
