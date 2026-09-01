@@ -36,15 +36,22 @@ BIN_NAME_COMMANDS = [
     ("insert", "insert into test.SET (PK, {}) values ('key0', 1)"),
 ]
 
-MULTI_BIN_NAME_COMMANDS = [
+MULTI_BIN_NAME_SELECT_COMMANDS = [
     ("select by digest",
             "select str, {} from test.SET where digest = '" + DIGEST_HEX + "'"),
     ("select by pk", "select str, {} from test.SET where pk = 'key0'"),
     ("scan", "select str, {} from test.SET"),
     ("query", "select str, {} from test.SET where a-int = 0"),
+]
+
+MULTI_BIN_NAME_INSERT_COMMANDS = [
     ("insert",
             "insert into test.SET (PK, str, {}) values ('key0', '1', 1)"),
 ]
+
+MULTI_BIN_NAME_COMMANDS = (
+    MULTI_BIN_NAME_SELECT_COMMANDS + MULTI_BIN_NAME_INSERT_COMMANDS
+)
 
 NON_STRING_VALUES = [
     ("null", "null"),
