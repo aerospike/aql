@@ -42,5 +42,5 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
     secrets:
-      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
-      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+      dockerhub-username: ${{ vars.AEROSPIKE_DOCKER_ORG_NAME || 'aerospike' }}
+      dockerhub-token: ${{ secrets.AEROSPIKE_DOCKER_ORG_RW_TOKEN }}
