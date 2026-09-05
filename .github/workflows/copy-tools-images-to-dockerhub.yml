@@ -1,7 +1,9 @@
-name: Copy aerospike-tools images to Docker Hub
+name: Copy aerospike-aql images to Docker Hub
 
-# Copies already-published aerospike-tools tags from JFrog to Docker Hub.
+# Copies already-published aerospike-aql tags from JFrog to Docker Hub.
 # Does not build images and does not write anything back to Artifactory.
+# Tags: 9.2.9-3 (multi-arch index), 9.2.9-3-amd64 (linux/amd64),
+# 9.2.9-3-arm64 (linux/arm64).
 
 on:
   workflow_dispatch:
@@ -9,15 +11,15 @@ on:
       source-image:
         description: Source image without tag
         required: true
-        default: artifact.aerospike.io/docker/aerospike-tools
+        default: artifact.aerospike.io/docker/aerospike-aql
       dest-image:
         description: Destination Docker Hub image without tag
         required: true
-        default: aerospike/aerospike-tools
+        default: aerospike/aerospike-aql
       tags:
-        description: Comma-separated tags to copy unchanged
+        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64)
         required: true
-        default: 13.0.3-5,13.0.3-5-amd64,13.0.3-5-arm64
+        default: 9.2.9-3,9.2.9-3-amd64,9.2.9-3-arm64
       dry-run:
         description: Inspect JFrog tags only; do not push to Docker Hub
         type: boolean
