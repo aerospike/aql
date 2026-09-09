@@ -35,17 +35,6 @@ function build_libyaml_static() {
 	rm -rf "/tmp/yaml-${LIBYAML_VERSION}"
 }
 
-function install_deps_debian11() {
-	rm -rf /var/lib/apt/lists/*
-	apt-get clean
-	apt-get update -o Acquire::Retries=5
-	apt-get install -y --no-install-recommends $BUILD_DEPS_DEBIAN ruby-rubygems make rpm git curl binutils \
-		python3 python3-pip rsync libssl-dev lzma liblzma-dev libffi-dev build-essential ruby-dev
-	gem install fpm -v "$FPM_VERSION"
-	apt-get clean
-	rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
-}
-
 function install_deps_debian12() {
 	rm -rf /var/lib/apt/lists/*
 	apt-get clean
