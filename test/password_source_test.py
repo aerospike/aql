@@ -1,11 +1,14 @@
 import base64
+import functools
 import glob
 import os
 import pty
 import select
 import shutil
+import socket
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -44,6 +47,66 @@ def run(args, env=None, config=None):
         os.environ.update(env or {})
         out = utils.run_aql(conf + args + UNREACHABLE)
     return out.returncode, out.stdout.decode() + out.stderr.decode()
+
+
+def recv_exact(conn, size: int) -> bytes:
+    data = b""
+    while len(data) < size:
+        chunk = conn.recv(size - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def capture_login(args, env=None, config=None) -> bytes:
+    """Runs aql against a fake server and returns the login request it sends, which holds the credential."""
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(8)
+    packets = []
+
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            with conn:
+                conn.settimeout(5)
+                header = recv_exact(conn, 8)
+                size = int.from_bytes(header, "big") & 0xFFFFFFFFFFFF
+                packets.append(header + recv_exact(conn, size))
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    conf = ["--only-config-file", config] if config else ["--no-config-file"]
+    target = ["-h", "127.0.0.1", "-p", str(srv.getsockname()[1]), "-c", "show namespaces"]
+    try:
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop(VAR, None)
+            os.environ.update(env or {})
+            out = utils.run_aql(conf + args + target)
+    finally:
+        # close() alone does not wake accept() on Linux; macOS raises ENOTCONN here.
+        try:
+            srv.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        srv.close()
+        thread.join(5)
+
+    output = out.stdout.decode() + out.stderr.decode()
+    if not packets or len(set(packets)) != 1:
+        raise AssertionError("expected one distinct login request, got {}:\n{}".format(len(set(packets)), output))
+    return packets[0]
+
+
+@functools.lru_cache(maxsize=None)
+def literal_login(password: str) -> bytes:
+    """Login request for a literal -P value, shared by the tests that compare against it."""
+    return capture_login(["-U", "admin", "-P", password])
 
 
 def run_with_prompt(args, typed: str) -> str:
@@ -259,6 +322,37 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotIn("--tls-keyfile-password:", out)
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
+
+
+class PasswordReachesServerTest(unittest.TestCase):
+    """The resolved --password is what the client sends at login, not just something that resolves."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.dir)
+
+    def test_fixture_tells_passwords_apart(self):
+        self.assertNotEqual(literal_login(SECRET), literal_login("wrong"))
+
+    @parameterized.expand(
+        [
+            ("env", "env:" + VAR, {VAR: SECRET}),
+            ("b64", "b64:" + b64(SECRET), {}),
+        ]
+    )
+    def test_command_line(self, _, value, env):
+        self.assertEqual(capture_login(["-U", "admin", "-P", value], env), literal_login(SECRET))
+
+    def test_command_line_wrong_value(self):
+        self.assertEqual(capture_login(["-U", "admin", "-P", "env:" + VAR], {VAR: "wrong"}), literal_login("wrong"))
+
+    def test_config_file(self):
+        config = os.path.join(self.dir, "astools.conf")
+        with open(config, "w") as f:
+            f.write('[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
+
+        self.assertEqual(capture_login([], {VAR: SECRET}, config), literal_login(SECRET))
 
 
 if __name__ == "__main__":
