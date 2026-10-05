@@ -355,5 +355,68 @@ class PasswordReachesServerTest(unittest.TestCase):
         self.assertEqual(capture_login([], {VAR: SECRET}, config), literal_login(SECRET))
 
 
+class PasswordLengthTest(unittest.TestCase):
+    """A --password value from a source must fit the client's 63-byte limit."""
+
+    LONGEST = "p" * 63
+    TOO_LONG = "p" * 64
+    FORMS = ["env", "env_b64", "env_b64_newline", "b64", "b64_newline", "file", "file_newline", "file_crlf"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.dir)
+
+    def source(self, form: str, password: str):
+        """Returns the -P argument, the environment and how the error names the source."""
+        if form.startswith("file"):
+            path = os.path.join(self.dir, "{}-{}".format(form, len(password)))
+            ending = {"file": "", "file_newline": "\n", "file_crlf": "\r\n"}[form]
+            with open(path, "w", newline="") as f:
+                f.write(password + ending)
+            return "file:" + path, {}, "value from file " + path
+
+        ending = "\n" if form.endswith("_newline") else ""
+        if form == "env":
+            return "env:" + VAR, {VAR: password}, "value from environment variable " + VAR
+        if form.startswith("env_b64"):
+            return "env-b64:" + VAR, {VAR: b64(password + ending)}, "value from environment variable " + VAR
+        return "b64:" + b64(password + ending), {}, "decoded b64: value"
+
+    @parameterized.expand([(form,) for form in FORMS])
+    def test_longest_value_is_sent(self, form):
+        arg, env, _ = self.source(form, self.LONGEST)
+        self.assertEqual(capture_login(["-U", "admin", "-P", arg], env), literal_login(self.LONGEST))
+
+    @parameterized.expand([(form,) for form in FORMS])
+    def test_too_long_value_is_rejected(self, form):
+        arg, env, described = self.source(form, self.TOO_LONG)
+        rc, out = run(["-U", "admin", "-P", arg], env)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: {} is longer than 63 bytes\n".format(described), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("Invalid password", out)
+        self.assertNotIn(self.TOO_LONG, out)
+        self.assertNotIn(b64(self.TOO_LONG), out)
+
+    def test_literal_keeps_client_error(self):
+        rc, out = run(["-U", "admin", "-P", self.TOO_LONG])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("Invalid password for user name `admin`", out)
+        self.assertNotIn("longer than", out)
+
+    def test_tls_keyfile_password_has_no_limit(self):
+        password = "k" * 100
+        key = os.path.join(self.dir, "long-key.pem")
+        make_key(key, password)
+        rc, out = run(["--tls-enable", "--tls-keyfile", key, "--tls-keyfile-password", "env:" + VAR], {VAR: password})
+
+        self.assertNotIn("longer than", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+
 if __name__ == "__main__":
     unittest.main()

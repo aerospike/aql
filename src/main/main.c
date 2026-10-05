@@ -78,7 +78,7 @@ static void sig_hdlr(int sig_num);
 static void sig_hdlr_init();
 static bool client_log_cb(as_log_level level, const char* func, const char* file, uint32_t line, const char* fmt, ...);
 
-static bool read_password(const char* opt, char** ptr);
+static bool read_password(const char* opt, char** ptr, size_t max_len);
 static void add_tls_host(asql_config* c, as_config* config);
 
 //=========================================================
@@ -276,7 +276,7 @@ asql_init(asql_config* c)
 			free(c->base.password);
 			c->base.password = strdup(getpass("Enter Password: "));
 		}
-		else if (! read_password("--password", &c->base.password)) {
+		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1)) {
 			return false;
 		}
 
@@ -307,7 +307,7 @@ asql_init(asql_config* c)
 			free(c->base.tls.keyfile_pw);
 			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
-		else if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw)) {
+		else if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0)) {
 			return false;
 		}
 	}
@@ -504,14 +504,29 @@ password_b64(const char* in)
 	return pw;
 }
 
+static char*
+password_fit(const char* opt, char* pw, size_t max_len, const char* what, const char* name)
+{
+	if (max_len == 0 || strlen(pw) <= max_len) {
+		return pw;
+	}
+
+	fprintf(stderr, "%s: %s%s is longer than %zu bytes\n", opt, what, name, max_len);
+	free(pw);
+	return NULL;
+}
+
 static bool
-read_password(const char* opt, char** ptr)
+read_password(const char* opt, char** ptr, size_t max_len)
 {
 	const char* value = *ptr;
 	char* pw;
 
 	if (strncmp(value, "env:", 4) == 0) {
-		if ((pw = password_env(opt, value + 4)) == NULL) {
+		const char* var = value + 4;
+
+		if ((pw = password_env(opt, var)) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
 			return false;
 		}
 	}
@@ -538,6 +553,10 @@ read_password(const char* opt, char** ptr)
 			free(pw);
 			return false;
 		}
+
+		if ((pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
+			return false;
+		}
 	}
 	else if (strncmp(value, "b64:", 4) == 0) {
 		if ((pw = password_b64(value + 4)) == NULL) {
@@ -550,9 +569,16 @@ read_password(const char* opt, char** ptr)
 			free(pw);
 			return false;
 		}
+
+		if ((pw = password_fit(opt, pw, max_len, "decoded b64: value", "")) == NULL) {
+			return false;
+		}
 	}
 	else if (strncmp(value, "file:", 5) == 0) {
-		if ((pw = password_file(opt, value + 5)) == NULL) {
+		const char* path = value + 5;
+
+		if ((pw = password_file(opt, path)) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from file ", path)) == NULL) {
 			return false;
 		}
 	}
