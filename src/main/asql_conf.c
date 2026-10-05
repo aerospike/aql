@@ -291,12 +291,13 @@ print_config_file_option()
 	fprintf(stdout, "                      Default: 127.0.0.1:3005\n");
 	fprintf(stdout, " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n");
 	fprintf(stdout, "                      Default: 3005\n");
-	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for Secret Agent requests, 1 or more.\n");
-	fprintf(stdout, "                      It does not apply to the TCP connect or the name lookup.\n");
-	fprintf(stdout, "                      Default: 1000\n");
-	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS encryption to\n");
-	fprintf(stdout, "                      the Secret Agent, but the agent's certificate is not\n");
-	fprintf(stdout, "                      verified. Default: none\n");
+	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n");
+	fprintf(stdout, "                      covers the TCP connect, the TLS handshake and the request,\n");
+	fprintf(stdout, "                      but not the name lookup. Default: 1000\n");
+	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n");
+	fprintf(stdout, "                      Agent and verifies its certificate against this CA. The\n");
+	fprintf(stdout, "                      agent's hostname or IP address must be in the certificate.\n");
+	fprintf(stdout, "                      Default: none\n");
 }
 
 void

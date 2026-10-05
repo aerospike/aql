@@ -1,8 +1,10 @@
 import base64
+import errno
 import glob
 import json
 import os
 import re
+import select
 import shutil
 import socket
 import ssl
@@ -90,26 +92,74 @@ def fake_agent(test, response: bytes | None) -> str:
     return str(srv.getsockname()[1])
 
 
+def blackhole(test) -> tuple[str, str] | None:
+    """An address whose connects hang, found the way the library tests do.
+
+    A full listen backlog drops new connects on Linux; macOS resets them instead, so fall back to
+    addresses that usually drop the SYN.
+    """
+
+    def probe(addr: str, port: int) -> int:
+        s = socket.socket()
+        s.setblocking(False)
+        test.addCleanup(s.close)
+        if s.connect_ex((addr, port)) not in (0, errno.EINPROGRESS, errno.EWOULDBLOCK):
+            return -1
+        _, writable, _ = select.select([], [s], [], 0.2)
+        if not writable:
+            return 0
+        return 1 if s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR) == 0 else -1
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(0)
+    test.addCleanup(srv.close)
+    port = srv.getsockname()[1]
+
+    for _ in range(64):
+        rv = probe("127.0.0.1", port)
+        if rv == 0:
+            return "127.0.0.1", str(port)
+        if rv < 0:
+            break
+
+    for addr in ("127.0.0.2", "192.0.2.1"):
+        if probe(addr, 3005) == 0:
+            return addr, "3005"
+    return None
+
+
 def write(path: str, content: str, mode: int = 0o644):
     with open(path, "w") as f:
         f.write(content)
     os.chmod(path, mode)
 
 
-def make_cert(dir: str):
-    key = os.path.join(dir, "agent-key.pem")
-    cert = os.path.join(dir, "agent-cert.pem")
-    subprocess.run(
-        [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", key, "-out", cert, "-days", "2", "-subj", "/CN=localhost",
-            "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        ],
-        check=True,
-        capture_output=True,
-    )
-    os.chmod(key, 0o644)
-    return cert, key
+def openssl(dir: str, *args: str):
+    subprocess.run(["openssl", *args], cwd=dir, check=True, capture_output=True)
+
+
+def make_ca(dir: str, name: str) -> str:
+    """A throwaway CA, built like the library's src/test/gen-certs.sh."""
+    write(os.path.join(dir, name + ".ext"), "basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n")
+    openssl(dir, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
+            "-keyout", name + "-key.pem", "-out", name + ".csr")
+    openssl(dir, "x509", "-req", "-days", "2", "-in", name + ".csr", "-signkey", name + "-key.pem",
+            "-extfile", name + ".ext", "-out", name + ".pem")
+    return os.path.join(dir, name + ".pem")
+
+
+def make_leaf(dir: str, name: str, ca: str, san: str) -> tuple[str, str]:
+    """An agent certificate issued by ca for the given subject alternative names."""
+    ca_name = os.path.basename(ca)[:-len(".pem")]
+    write(os.path.join(dir, name + ".ext"),
+          "basicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName={}\n".format(san))
+    openssl(dir, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
+            "-keyout", name + "-key.pem", "-out", name + ".csr")
+    openssl(dir, "x509", "-req", "-days", "2", "-in", name + ".csr", "-CA", ca_name + ".pem",
+            "-CAkey", ca_name + "-key.pem", "-CAcreateserial", "-extfile", name + ".ext", "-out", name + ".pem")
+    os.chmod(os.path.join(dir, name + "-key.pem"), 0o644)
+    return os.path.join(dir, name + ".pem"), os.path.join(dir, name + "-key.pem")
 
 
 def wait_for_agent(container, port: int, cafile: str | None, timeout: float = 60):
@@ -124,7 +174,8 @@ def wait_for_agent(container, port: int, cafile: str | None, timeout: float = 60
                 conn = raw
                 if cafile:
                     ctx = ssl.create_default_context(cafile=cafile)
-                    conn = ctx.wrap_socket(raw, server_hostname="localhost")
+                    ctx.check_hostname = False
+                    conn = ctx.wrap_socket(raw)
                 conn.sendall(request)
                 header = conn.recv(8)
                 if len(header) == 8 and struct.unpack(">I", header[:4])[0] == AGENT_MAGIC:
@@ -138,7 +189,7 @@ def wait_for_agent(container, port: int, cafile: str | None, timeout: float = 60
     )
 
 
-def start_agent(test_cls, dir: str, name: str, tls: tuple[str, str] | None) -> int:
+def start_agent(test_cls, dir: str, name: str, tls: tuple[str, str] | None, cafile: str | None = None) -> int:
     tls_conf = ""
     if tls:
         tls_conf = '    tls:\n      cert-file: "{0}/{1}"\n      key-file: "{0}/{2}"\n'.format(
@@ -184,7 +235,7 @@ def start_agent(test_cls, dir: str, name: str, tls: tuple[str, str] | None) -> i
             raise RuntimeError("secret agent container {} has no port binding".format(container.name))
         time.sleep(0.2)
 
-    wait_for_agent(container, port, tls[0] if tls else None)
+    wait_for_agent(container, port, cafile)
     return port
 
 
@@ -308,6 +359,41 @@ class SecretAgentOptionTest(unittest.TestCase):
             self.assertGreaterEqual(elapsed, at_least)
         if under is not None:
             self.assertLess(elapsed, under)
+
+    # The library default is 1000 ms, so the long case also proves the setting reaches the connect.
+    @parameterized.expand([("short", 300, None, 1.2), ("long", 2500, 2.4, 4.0)])
+    def test_connect_timeout(self, _, timeout_ms, at_least, under):
+        target = blackhole(self)
+        if target is None:
+            self.skipTest("no address here leaves a connect pending")
+
+        start = time.monotonic()
+        rc, out = run(
+            [
+                "-U", "admin", "-P", "secrets:aql:pw", "--sa-address", target[0], "--sa-port", target[1],
+                "--sa-timeout", str(timeout_ms),
+            ]
+        )
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: connect timed out\n", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        if at_least is not None:
+            self.assertGreaterEqual(elapsed, at_least)
+        self.assertLess(elapsed, under)
+
+    # TEST-NET-1 is either blackholed or unreachable, depending on the network.
+    def test_unroutable_agent_is_bounded(self):
+        start = time.monotonic()
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", "192.0.2.1", "--sa-timeout", "300"])
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertRegex(out, r"--password: secret agent request for secrets:aql:pw failed: "
+                              r"(timed out|connection or protocol error)\n")
+        self.assertLess(elapsed, 1.2)
 
     def test_malformed_response_is_not_echoed(self):
         port = fake_agent(self, '{{"SecretValue":"{}'.format(b64(SECRET)).encode())
@@ -443,9 +529,11 @@ class SecretAgentOptionTest(unittest.TestCase):
             "Default: 127.0.0.1:3005",
             " --sa-port=PORT",
             " --sa-timeout=ms",
-            "It does not apply to the TCP connect or the name lookup.",
+            "covers the TCP connect, the TLS handshake and the request,",
+            "but not the name lookup. Default: 1000",
             " --sa-cafile=path",
-            "the agent's certificate is not",
+            "Agent and verifies its certificate against this CA. The",
+            "agent's hostname or IP address must be in the certificate.",
             "(cluster aql secret-agent include)",
         ]:
             self.assertIn(text, out)
@@ -463,6 +551,8 @@ REVIEWED_LOG_ARGS = {
     "ERR: response: %.*s": "(int)payload_len, payload_str",
     "ERR: SSL_connect failed: %s": "errbuf",
     "ERR: SSL_connect I/O error: %s": "errbuf",
+    "ERR: SSL_connect certificate verify failed: %s (%ld)": "X509_verify_cert_error_string(rv), rv",
+    "ERR: unable to set TLS peer name: %s": "host",
 }
 
 
@@ -609,7 +699,10 @@ class SecretAgentTest(unittest.TestCase):
         make_key(cls.parsed_looking_key, PARSED_LOOKING_SECRET)
         cls.long_password_key = os.path.join(cls.dir, "key3.pem")
         make_key(cls.long_password_key, SECRETS["long_key"])
-        cls.cert, cert_key = make_cert(cls.dir)
+        cls.ca = make_ca(cls.dir, "ca")
+        cls.other_ca = make_ca(cls.dir, "other-ca")
+        agent_cert = make_leaf(cls.dir, "agent", cls.ca, "DNS:localhost,IP:127.0.0.1")
+        wrong_name_cert = make_leaf(cls.dir, "wrong-name", cls.ca, "DNS:agent.invalid")
 
         client = utils._get_docker_client()
         try:
@@ -618,7 +711,8 @@ class SecretAgentTest(unittest.TestCase):
             client.images.pull(AGENT_IMAGE, tag=AGENT_TAG, platform="linux/amd64")
 
         cls.port = str(start_agent(cls, cls.dir, "tcp", None))
-        cls.tls_port = str(start_agent(cls, cls.dir, "tls", (cls.cert, cert_key)))
+        cls.tls_port = str(start_agent(cls, cls.dir, "tls", agent_cert, cls.ca))
+        cls.wrong_name_port = str(start_agent(cls, cls.dir, "tls-wrong-name", wrong_name_cert, cls.ca))
         cls.closed = str(closed_port())
 
     def config(self, content: str) -> str:
@@ -789,13 +883,45 @@ class SecretAgentTest(unittest.TestCase):
 
         self.assert_password_resolved(rc, out)
 
-    def test_tls_to_agent(self):
-        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-cafile", self.cert])
+    @parameterized.expand([("ip", "127.0.0.1"), ("hostname", "localhost")])
+    def test_tls_to_agent(self, _, address):
+        rc, out = run(
+            ["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", address, "--sa-port", self.tls_port, "--sa-cafile", self.ca]
+        )
         self.assert_password_resolved(rc, out)
 
-        config = self.config('[secret-agent]\nsa-port = {}\nsa-cafile = "{}"\n'.format(self.tls_port, self.cert))
+        config = self.config(
+            '[secret-agent]\nsa-address = "{}"\nsa-port = {}\nsa-cafile = "{}"\n'.format(address, self.tls_port, self.ca)
+        )
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
         self.assert_password_resolved(rc, out)
+
+    def test_login_uses_secret_over_tls(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-cafile", self.ca])
+        self.assertEqual(login, literal_login(SECRET))
+
+    @parameterized.expand(
+        [
+            ("unrelated_ca", "127.0.0.1", "tls_port", "other_ca", "unable to get local issuer certificate"),
+            ("agent_cert_as_ca", "127.0.0.1", "tls_port", "agent_cert", "unable to get local issuer certificate"),
+            ("hostname_mismatch", "localhost", "wrong_name_port", "ca", "hostname mismatch"),
+            ("ip_mismatch", "127.0.0.1", "wrong_name_port", "ca", "IP address mismatch"),
+        ]
+    )
+    def test_tls_certificate_rejected(self, _, address, port, cafile, reason):
+        cafiles = {"ca": self.ca, "other_ca": self.other_ca, "agent_cert": os.path.join(self.dir, "agent.pem")}
+        rc, out = run(
+            [
+                "-U", "admin", "-P", "secrets:aql:pw", "--sa-address", address,
+                "--sa-port", getattr(self, port), "--sa-cafile", cafiles[cafile],
+            ]
+        )
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: SSL_connect certificate verify failed: {} (".format(reason), out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: connection or protocol error\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assert_no_secret(out)
 
     def test_tls_agent_without_cafile(self):
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-timeout", "2000"])

@@ -92,10 +92,11 @@
 [secret-agent]
 # sa-address = "127.0.0.1"            # "<host>[:<port>]" or "[<ipv6>][:<port>]"
 # sa-port = "3005"                    # overrides a port in sa-address
-# sa-timeout applies to requests, not to the TCP connect or the name lookup.
+# sa-timeout covers the TCP connect, the TLS handshake and the request, but not
+# the name lookup.
 # sa-timeout = 1000                   # in ms, 1 or more
-# sa-cafile enables TLS encryption to the agent, but the agent's certificate
-# is not verified.
+# sa-cafile enables TLS to the agent and verifies the agent's certificate against
+# this CA. The hostname or IP address in sa-address must be in the certificate.
 # sa-cafile = "/etc/aerospike/secret-agent/cacert.pem"
 
 
