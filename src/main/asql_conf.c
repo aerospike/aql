@@ -292,7 +292,8 @@ print_config_file_option()
 	fprintf(stdout, " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n");
 	fprintf(stdout, "                      Default: 3005\n");
 	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for Secret Agent requests, 1 or more.\n");
-	fprintf(stdout, "                      It does not apply to connecting. Default: 1000\n");
+	fprintf(stdout, "                      It does not apply to the TCP connect or the name lookup.\n");
+	fprintf(stdout, "                      Default: 1000\n");
 	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS encryption to\n");
 	fprintf(stdout, "                      the Secret Agent, but the agent's certificate is not\n");
 	fprintf(stdout, "                      verified. Default: none\n");
@@ -1603,14 +1604,31 @@ sa_parse_port(const char* str, char** port)
 	return true;
 }
 
-// Unbracketed with more than one colon must be a bare IPv6 address.
+// The zone ("fe80::1%lo0") is checked by the resolver later; glibc's inet_pton rejects it.
+static bool
+sa_is_ipv6(const char* host, size_t len)
+{
+	const char* zone = memchr(host, '%', len);
+	size_t addr_len = zone != NULL ? (size_t)(zone - host) : len;
+	char buf[INET6_ADDRSTRLEN];
+	struct in6_addr ipv6;
+
+	if (addr_len >= sizeof(buf) || (zone != NULL && addr_len + 1 == len)) {
+		return false;
+	}
+
+	memcpy(buf, host, addr_len);
+	buf[addr_len] = 0;
+	return inet_pton(AF_INET6, buf, &ipv6) == 1;
+}
+
+// A host with a colon must be IPv6; unbracketed, a single colon separates the port.
 static bool
 sa_parse_address(const char* address, char** host, char** port)
 {
 	const char* start = address;
 	const char* end;
 	const char* port_str = NULL;
-	struct in6_addr ipv6;
 
 	if (address[0] == '[') {
 		start = address + 1;
@@ -1632,12 +1650,13 @@ sa_parse_address(const char* address, char** host, char** port)
 			end = colon;
 			port_str = colon + 1;
 		}
-		else if (colon != NULL && inet_pton(AF_INET6, address, &ipv6) != 1) {
-			return false;
-		}
 	}
 
 	if (end == start) {
+		return false;
+	}
+
+	if (memchr(start, ':', end - start) != NULL && ! sa_is_ipv6(start, end - start)) {
 		return false;
 	}
 
