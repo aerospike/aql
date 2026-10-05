@@ -259,6 +259,11 @@ class SecretAgentOptionTest(unittest.TestCase):
             ("address_bracketed_not_ipv6_port", "--sa-address", "[host:3005:x]:3005", "--sa-address: invalid value [host:3005:x]:3005"),
             ("address_bracketed_one_colon", "--sa-address", "[a:b]", "--sa-address: invalid value [a:b]"),
             ("address_bracketed_empty_zone", "--sa-address", "[fe80::1%]:3005", "--sa-address: invalid value [fe80::1%]:3005"),
+            ("address_bracketed_hostname", "--sa-address", "[localhost]", "--sa-address: invalid value [localhost]"),
+            ("address_bracketed_hostname_port", "--sa-address", "[localhost]:3005", "--sa-address: invalid value [localhost]:3005"),
+            ("address_bracketed_ipv4", "--sa-address", "[127.0.0.1]", "--sa-address: invalid value [127.0.0.1]"),
+            ("address_bracketed_ipv4_port", "--sa-address", "[127.0.0.1]:3005", "--sa-address: invalid value [127.0.0.1]:3005"),
+            ("address_bracketed_hostname_zone", "--sa-address", "[host%lo0]", "--sa-address: invalid value [host%lo0]"),
         ]
     )
     def test_bad_option(self, _, opt, value, expected):
@@ -370,6 +375,8 @@ class SecretAgentOptionTest(unittest.TestCase):
             ("address_extra_colon", 'sa-address = "host:3005:x"', "sa-address"),
             ("address_bad_ipv6_zone", 'sa-address = "1::2::3%lo0"', "sa-address"),
             ("address_bracketed_not_ipv6", 'sa-address = "[host:3005:x]:3005"', "sa-address"),
+            ("address_bracketed_hostname", 'sa-address = "[localhost]:3005"', "sa-address"),
+            ("address_bracketed_ipv4", 'sa-address = "[127.0.0.1]"', "sa-address"),
             ("cafile_int", "sa-cafile = 1", "sa-cafile"),
         ]
     )
