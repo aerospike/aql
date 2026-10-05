@@ -79,6 +79,13 @@ typedef enum {
 	ASQL_OP_MAX
 } asql_optype;
 
+typedef struct asql_sa_config {
+	char* host;
+	char* port;
+	int timeout_ms;
+	char* cafile;
+} asql_sa_config;
+
 typedef struct asql_base_config {
 
 	char* host;
@@ -91,6 +98,7 @@ typedef struct asql_base_config {
 	bool password_from_config;
 	as_config_tls tls;
 	bool tls_keyfile_pw_from_config;
+	asql_sa_config sa;
 	int threadpoolsize;
 
 	// Env specific config with set option.
