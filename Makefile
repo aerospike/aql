@@ -2,6 +2,7 @@ include project/build.makefile
 
 CLIENT_PATH = ./modules/c-client
 JANSSON_PATH = ./modules/jansson
+SECRET_CLIENT_PATH = ./modules/secret-agent-client
 TOML_PATH = ./toml
 
 # if this is an m1 mac using homebrew
@@ -23,6 +24,13 @@ ifdef M1_HOME_BREW
   OPENSSL_PREFIX = /opt/homebrew/opt/openssl
 endif
 
+# Same prefix as the OpenSSL libs below; on Linux it is absent and /usr/include is used.
+ifeq ($(OPENSSL_STATIC_PATH),)
+  OPENSSL_INCLUDE = $(abspath $(OPENSSL_PREFIX)/include)
+else
+  OPENSSL_INCLUDE = $(abspath $(OPENSSL_STATIC_PATH)/../include)
+endif
+
 ifeq ($(OS),Darwin)
   CFLAGS += -D_DARWIN_UNLIMITED_SELECT
 endif
@@ -41,6 +49,7 @@ INCLUDES = $(DIR_INCLUDE:%=-I%)
 
 CFLAGS = -std=gnu11 -O0 -fno-common -fno-strict-aliasing -fPIC -Wall $(AS_CFLAGS) -DMARCH_$(ARCH) -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE
 CFLAGS += $(INCLUDES) -I$(JANSSON_PATH)/src -I$(TOML_PATH)/
+CFLAGS += -I$(SECRET_CLIENT_PATH)/src/include -I$(OPENSSL_INCLUDE)
 
 LIBRARIES += -L/usr/local/lib
 
@@ -50,10 +59,12 @@ endif
 
 ifeq ($(OS),Darwin)
   LIBRARIES += $(CLIENT_PATH)/$(TARGET_LIB)/libaerospike.a
+  LIBRARIES += $(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a
   LIBRARIES += $(JANSSON_PATH)/src/.libs/libjansson.a
   LIBRARIES += $(TOML_PATH)/libtoml.a
 else
   LIBRARIES += -L$(CLIENT_PATH)/$(TARGET_LIB) -Wl,-l,:libaerospike.a
+  LIBRARIES += -L$(SECRET_CLIENT_PATH)/$(TARGET_LIB) -Wl,-l,:libsecret-agent-client-c.a
   LIBRARIES += -L$(JANSSON_PATH)/src/.libs -Wl,-l,:libjansson.a
   LIBRARIES += -L$(TOML_PATH) -Wl,-l,:libtoml.a
 endif
@@ -166,7 +177,7 @@ CFLAGS += -DAQL_VERSION=\"$(AQL_VERSION)\"
 
 .DEFAULT_GOAL := all
 
-all: toml jansson c-client aql
+all: toml jansson c-client secret-agent-client aql
 
 LEXER_SRC = sql-lexer.c
 .SECONDARY: $(LEXER_SRC)
@@ -193,7 +204,7 @@ OBJECTS += renderer/table.o
 OBJECTS += renderer/no_renderer.o
 OBJECTS += renderer/raw_renderer.o
 $(info ${OBJECTS})
-aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN)
+aql: $(call objects, $(OBJECTS)) | $(TARGET_BIN) $(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a
 	$(call executable, $(empty), $(empty), $(empty), $(LDFLAGS), $(LIBRARIES))
 
 .PHONY: c-client
@@ -217,6 +228,14 @@ $(JANSSON_PATH)/configure:
 
 .INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 
+.PHONY: secret-agent-client
+secret-agent-client: $(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a
+
+# Static library only; its Makefile ignores our CFLAGS, so the include paths go in INC_PATH.
+$(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a: | $(JANSSON_PATH)/src/.libs/libjansson.a
+	$(MAKE) -C $(SECRET_CLIENT_PATH) $(TARGET_LIB)/libsecret-agent-client-c.a \
+		INC_PATH="src/include $(abspath $(JANSSON_PATH)/src) $(OPENSSL_INCLUDE)"
+
 .PHONY: toml
 toml: $(TOML_PATH)/libtoml.a $(TOML_PATH)/toml.o
 
@@ -235,6 +254,7 @@ tags etags:
 
 cleanmodules:
 	$(MAKE) -C $(CLIENT_PATH) clean
+	$(MAKE) -C $(SECRET_CLIENT_PATH) clean
 	$(MAKE) -C toml clean
 	if [ -e '$(JANSSON_PATH)/Makefile' ]; then \
 		$(MAKE) -C $(JANSSON_PATH) clean || true; \

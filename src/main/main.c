@@ -34,6 +34,8 @@
 #include <aerospike/as_scan.h>
 #include <citrusleaf/cf_b64.h>
 
+#include <sa_client.h>
+
 #include "asql.h"
 #include "asql_conf.h"
 #include "asql_print.h"
@@ -50,6 +52,12 @@
 
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
+
+// Secret agent client log lines whose arguments can echo the raw request or response bytes.
+static const char* const SA_LOG_NO_ARGS[] = {
+	"ERR: failed asking for secret",
+	"ERR: failed to parse response JSON"
+};
 
 
 //=========================================================
@@ -78,7 +86,7 @@ static void sig_hdlr(int sig_num);
 static void sig_hdlr_init();
 static bool client_log_cb(as_log_level level, const char* func, const char* file, uint32_t line, const char* fmt, ...);
 
-static bool read_password(const char* opt, char** ptr, size_t max_len);
+static bool read_password(const asql_sa_config* sa, const char* opt, char** ptr, size_t max_len);
 static void add_tls_host(asql_config* c, as_config* config);
 
 //=========================================================
@@ -276,7 +284,7 @@ asql_init(asql_config* c)
 			free(c->base.password);
 			c->base.password = strdup(getpass("Enter Password: "));
 		}
-		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1)) {
+		else if (! read_password(&c->base.sa, "--password", &c->base.password, AS_PASSWORD_SIZE - 1)) {
 			return false;
 		}
 
@@ -307,7 +315,7 @@ asql_init(asql_config* c)
 			free(c->base.tls.keyfile_pw);
 			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
-		else if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0)) {
+		else if (! read_password(&c->base.sa, "--tls-keyfile-password", &c->base.tls.keyfile_pw, 0)) {
 			return false;
 		}
 	}
@@ -421,7 +429,7 @@ password_env(const char* opt, const char* var)
 }
 
 static char*
-password_file(const char* opt, const char* path)
+read_file(const char* opt, const char* path, size_t* len_r)
 {
 	FILE* fh = fopen(path, "r");
 
@@ -433,15 +441,15 @@ password_file(const char* opt, const char* path)
 
 	size_t cap = 256;
 	size_t len = 0;
-	char* pw = malloc(cap);
+	char* buf = malloc(cap);
 	size_t n;
 
-	while ((n = fread(pw + len, 1, cap - len - 1, fh)) != 0) {
+	while ((n = fread(buf + len, 1, cap - len - 1, fh)) != 0) {
 		len += n;
 
 		if (len == cap - 1) {
 			cap *= 2;
-			pw = realloc(pw, cap);
+			buf = realloc(buf, cap);
 		}
 	}
 
@@ -453,7 +461,22 @@ password_file(const char* opt, const char* path)
 	if (failed) {
 		fprintf(stderr, "%s: cannot read file %s: %s\n", opt, path,
 				strerror(err));
-		free(pw);
+		free(buf);
+		return NULL;
+	}
+
+	buf[len] = 0;
+	*len_r = len;
+	return buf;
+}
+
+static char*
+password_file(const char* opt, const char* path)
+{
+	size_t len;
+	char* pw = read_file(opt, path, &len);
+
+	if (pw == NULL) {
 		return NULL;
 	}
 
@@ -516,8 +539,98 @@ password_fit(const char* opt, char* pw, size_t max_len, const char* what, const 
 	return NULL;
 }
 
+static void
+sa_log_cb(const char* fmt, ...)
+{
+	int err = errno;
+
+	for (size_t i = 0; i < sizeof(SA_LOG_NO_ARGS) / sizeof(SA_LOG_NO_ARGS[0]); i++) {
+		if (strncmp(fmt, SA_LOG_NO_ARGS[i], strlen(SA_LOG_NO_ARGS[i])) == 0) {
+			fprintf(stderr, "secret-agent: %s\n", SA_LOG_NO_ARGS[i]);
+			return;
+		}
+	}
+
+	va_list ap;
+	va_start(ap, fmt);
+	fprintf(stderr, "secret-agent: ");
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	if (strncmp(fmt, "ERR: connect failed", 19) == 0) {
+		fprintf(stderr, " (%s)", strerror(err));
+	}
+
+	fprintf(stderr, "\n");
+}
+
+static const char*
+sa_err_str(sa_err err)
+{
+	switch (err.code) {
+		case SA_FAILED_BAD_REQUEST:
+			return "bad request";
+		case SA_FAILED_BAD_CONFIG:
+			return "bad address or port";
+		case SA_FAILED_INTERNAL:
+			return "connection or protocol error";
+		case SA_FAILED_TIMEOUT:
+			return "timed out";
+		default:
+			return "unknown error";
+	}
+}
+
+static char*
+password_secret(const asql_sa_config* sa, const char* opt, const char* path)
+{
+	sa_cfg cfg;
+	sa_cfg_init(&cfg);
+	cfg.addr = sa->host;
+	cfg.port = sa->port;
+	cfg.timeout = sa->timeout_ms;
+
+	if (sa->cafile) {
+		size_t ca_len;
+
+		if ((cfg.tls.ca_string = read_file("--sa-cafile", sa->cafile, &ca_len)) == NULL) {
+			return NULL;
+		}
+
+		cfg.tls.enabled = true;
+	}
+
+	sa_client client;
+	sa_client_init(&client, &cfg);
+	sa_set_log_function(sa_log_cb);
+
+	uint8_t* buf = NULL;
+	size_t len = 0;
+	sa_err err = sa_secret_get_bytes(&client, path, &buf, &len);
+
+	free(cfg.tls.ca_string);
+
+	if (err.code != SA_OK) {
+		fprintf(stderr, "%s: secret agent request for %s failed: %s\n", opt,
+				path, sa_err_str(err));
+		return NULL;
+	}
+
+	if (len == 0 || memchr(buf, 0, len) != NULL) {
+		fprintf(stderr, "%s: secret agent returned %s for %s\n", opt,
+				len == 0 ? "an empty value" : "a value containing a NUL byte",
+				path);
+		free(buf);
+		return NULL;
+	}
+
+	// The library leaves one spare byte past the value.
+	buf[len] = 0;
+	return (char*)buf;
+}
+
 static bool
-read_password(const char* opt, char** ptr, size_t max_len)
+read_password(const asql_sa_config* sa, const char* opt, char** ptr, size_t max_len)
 {
 	const char* value = *ptr;
 	char* pw;
@@ -579,6 +692,11 @@ read_password(const char* opt, char** ptr, size_t max_len)
 
 		if ((pw = password_file(opt, path)) == NULL ||
 				(pw = password_fit(opt, pw, max_len, "value from file ", path)) == NULL) {
+			return false;
+		}
+	}
+	else if (strncmp(value, "secrets:", 8) == 0) {
+		if ((pw = password_secret(sa, opt, value)) == NULL) {
 			return false;
 		}
 	}
