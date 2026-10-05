@@ -711,7 +711,8 @@ read_password(const asql_sa_config* sa, const char* opt, char** ptr, size_t max_
 		}
 	}
 	else if (strncmp(value, "secrets:", 8) == 0) {
-		if ((pw = password_secret(sa, opt, value)) == NULL) {
+		if ((pw = password_secret(sa, opt, value)) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from ", value)) == NULL) {
 			return false;
 		}
 	}

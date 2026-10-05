@@ -42,6 +42,9 @@ SECRETS = {
     "trailing_newline": SECRET + "\n",
     "with_nul": "ab\0xyzzy",
     "empty": "",
+    "longest": "p" * 63,
+    "too_long": "p" * 64,
+    "long_key": "k" * 100,
 }
 
 
@@ -604,6 +607,8 @@ class SecretAgentTest(unittest.TestCase):
         make_key(cls.key, SECRET)
         cls.parsed_looking_key = os.path.join(cls.dir, "key2.pem")
         make_key(cls.parsed_looking_key, PARSED_LOOKING_SECRET)
+        cls.long_password_key = os.path.join(cls.dir, "key3.pem")
+        make_key(cls.long_password_key, SECRETS["long_key"])
         cls.cert, cert_key = make_cert(cls.dir)
 
         client = utils._get_docker_client()
@@ -815,6 +820,32 @@ class SecretAgentTest(unittest.TestCase):
         self.assertIn("--password: secret agent request for {} failed: bad request\n".format(path), out)
         self.assertNotIn(CONNECT_FAILED, out)
         self.assert_no_secret(out)
+
+    def test_longest_password_is_sent(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:longest", "--sa-port", self.port])
+        self.assertEqual(login, literal_login(SECRETS["longest"]))
+
+    def test_too_long_password_is_rejected(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:too_long", "--sa-port", self.port])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: value from secrets:aql:too_long is longer than 63 bytes\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("Invalid password", out)
+        self.assertNotIn(SECRETS["too_long"], out)
+        self.assertNotIn(b64(SECRETS["too_long"]), out)
+
+    def test_tls_keyfile_password_has_no_limit(self):
+        rc, out = run(
+            [
+                "--tls-enable", "--tls-keyfile", self.long_password_key,
+                "--tls-keyfile-password", "secrets:aql:long_key", "--sa-port", self.port,
+            ]
+        )
+
+        self.assertNotIn("longer than", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
 
     def test_value_with_nul_byte(self):
         rc, out = run(["-U", "admin", "-P", "secrets:aql:with_nul", "--sa-port", self.port])
