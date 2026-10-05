@@ -1622,15 +1622,16 @@ sa_is_ipv6(const char* host, size_t len)
 	return inet_pton(AF_INET6, buf, &ipv6) == 1;
 }
 
-// A host with a colon must be IPv6; unbracketed, a single colon separates the port.
+// A bracketed host or one with a colon must be IPv6; unbracketed, a single colon separates the port.
 static bool
 sa_parse_address(const char* address, char** host, char** port)
 {
+	bool bracketed = address[0] == '[';
 	const char* start = address;
 	const char* end;
 	const char* port_str = NULL;
 
-	if (address[0] == '[') {
+	if (bracketed) {
 		start = address + 1;
 		end = strchr(start, ']');
 
@@ -1656,7 +1657,7 @@ sa_parse_address(const char* address, char** host, char** port)
 		return false;
 	}
 
-	if (memchr(start, ':', end - start) != NULL && ! sa_is_ipv6(start, end - start)) {
+	if ((bracketed || memchr(start, ':', end - start) != NULL) && ! sa_is_ipv6(start, end - start)) {
 		return false;
 	}
 
