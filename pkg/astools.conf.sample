@@ -92,8 +92,10 @@
 [secret-agent]
 # sa-address = "127.0.0.1"            # "<host>[:<port>]" or "[<ipv6>][:<port>]"
 # sa-port = "3005"                    # overrides a port in sa-address
-# sa-timeout = 1000                   # in ms
-# sa-cafile = "/etc/aerospike/secret-agent/cacert.pem"   # enables TLS to the agent
+# sa-timeout = 1000                   # in ms, 1 or more, for requests, not for connecting
+# sa-cafile enables TLS encryption to the agent, but the agent's certificate
+# is not verified.
+# sa-cafile = "/etc/aerospike/secret-agent/cacert.pem"
 
 
 # Following are tools specific options

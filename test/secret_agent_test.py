@@ -1,6 +1,8 @@
 import base64
+import glob
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -20,6 +22,7 @@ from password_source_test import (
     PARSED_LOOKING_SECRET,
     SECRET,
     TLS_KEY_FAILED,
+    capture_login,
     make_key,
     run,
     run_with_prompt,
@@ -222,9 +225,10 @@ class SecretAgentOptionTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("timeout_text", "--sa-timeout", "abc", "--sa-timeout: invalid value abc, expected an integer from 0 to 2147483647"),
-            ("timeout_negative", "--sa-timeout", "-1", "--sa-timeout: invalid value -1, expected an integer from 0 to 2147483647"),
-            ("timeout_too_big", "--sa-timeout", "2147483648", "--sa-timeout: invalid value 2147483648, expected an integer from 0 to 2147483647"),
+            ("timeout_text", "--sa-timeout", "abc", "--sa-timeout: invalid value abc, expected an integer from 1 to 2147483647"),
+            ("timeout_zero", "--sa-timeout", "0", "--sa-timeout: invalid value 0, expected an integer from 1 to 2147483647"),
+            ("timeout_negative", "--sa-timeout", "-1", "--sa-timeout: invalid value -1, expected an integer from 1 to 2147483647"),
+            ("timeout_too_big", "--sa-timeout", "2147483648", "--sa-timeout: invalid value 2147483648, expected an integer from 1 to 2147483647"),
             ("port_zero", "--sa-port", "0", "--sa-port: invalid value 0"),
             ("port_too_big", "--sa-port", "65536", "--sa-port: invalid value 65536"),
             ("port_text", "--sa-port", "http", "--sa-port: invalid value http"),
@@ -235,6 +239,9 @@ class SecretAgentOptionTest(unittest.TestCase):
             ("address_unclosed_bracket", "--sa-address", "[::1", "--sa-address: invalid value [::1"),
             ("address_empty_brackets", "--sa-address", "[]:3005", "--sa-address: invalid value []:3005"),
             ("address_junk_after_bracket", "--sa-address", "[::1]x", "--sa-address: invalid value [::1]x"),
+            ("address_extra_colon", "--sa-address", "host:3005:x", "--sa-address: invalid value host:3005:x"),
+            ("address_ipv4_extra_colon", "--sa-address", "10.0.0.1:3005:1", "--sa-address: invalid value 10.0.0.1:3005:1"),
+            ("address_bad_ipv6", "--sa-address", "1::2::3", "--sa-address: invalid value 1::2::3"),
         ]
     )
     def test_bad_option(self, _, opt, value, expected):
@@ -245,23 +252,44 @@ class SecretAgentOptionTest(unittest.TestCase):
         self.assertNotIn("secret-agent:", out)
         self.assertNotIn(CONNECT_FAILED, out)
 
-    def test_timeout(self):
+    # The library default is 1000 ms. Without the setting both cases take about 1 s and fail.
+    @parameterized.expand(
+        [
+            ("command_line_short", False, 200, None, 0.8),
+            ("command_line_long", False, 2000, 1.9, None),
+            ("config_file_short", True, 200, None, 0.8),
+            ("config_file_long", True, 2000, 1.9, None),
+        ]
+    )
+    def test_timeout(self, _, from_config, timeout_ms, at_least, under):
         port = fake_agent(self, None)
-        start = time.time()
-        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", port, "--sa-timeout", "300"])
+        args = ["-U", "admin", "-P", "secrets:aql:pw"]
+        config = None
+
+        if from_config:
+            config = self.config("[secret-agent]\nsa-port = {}\nsa-timeout = {}\n".format(port, timeout_ms))
+        else:
+            args += ["--sa-port", port, "--sa-timeout", str(timeout_ms)]
+
+        start = time.monotonic()
+        rc, out = run(args, config=config)
+        elapsed = time.monotonic() - start
 
         self.assertNotEqual(rc, 0)
-        self.assertLess(time.time() - start, 5)
         self.assertIn("secret-agent: ERR: socket poll timed out\n", out)
         self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
         self.assertNotIn(CONNECT_FAILED, out)
+        if at_least is not None:
+            self.assertGreaterEqual(elapsed, at_least)
+        if under is not None:
+            self.assertLess(elapsed, under)
 
     def test_malformed_response_is_not_echoed(self):
         port = fake_agent(self, '{{"SecretValue":"{}'.format(b64(SECRET)).encode())
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", port])
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("secret-agent: ERR: failed to parse response JSON\n", out)
+        self.assertIn("secret-agent: ERR: failed to parse response JSON line\n", out)
         self.assertIn("--password: secret agent request for secrets:aql:pw failed: bad request\n", out)
         self.assertNotIn(b64(SECRET)[:4], out)
         self.assertNotIn(SECRET, out)
@@ -291,6 +319,7 @@ class SecretAgentOptionTest(unittest.TestCase):
     @parameterized.expand(
         [
             ("timeout_text", 'sa-timeout = "1000"', "sa-timeout"),
+            ("timeout_zero", "sa-timeout = 0", "sa-timeout"),
             ("timeout_negative", "sa-timeout = -1", "sa-timeout"),
             ("timeout_too_big", "sa-timeout = 2147483648", "sa-timeout"),
             ("port_zero", "sa-port = 0", "sa-port"),
@@ -300,6 +329,7 @@ class SecretAgentOptionTest(unittest.TestCase):
             ("address_int", "sa-address = 1", "sa-address"),
             ("address_bad", 'sa-address = "[::1"', "sa-address"),
             ("address_bad_port", 'sa-address = "host:0"', "sa-address"),
+            ("address_extra_colon", 'sa-address = "host:3005:x"', "sa-address"),
             ("cafile_int", "sa-cafile = 1", "sa-cafile"),
         ]
     )
@@ -363,11 +393,103 @@ class SecretAgentOptionTest(unittest.TestCase):
             "Default: 127.0.0.1:3005",
             " --sa-port=PORT",
             " --sa-timeout=ms",
+            "It does not apply to connecting. Default: 1000",
             " --sa-cafile=path",
+            "the agent's certificate is not",
             "(cluster aql secret-agent include)",
         ]:
             self.assertIn(text, out)
         self.assertEqual(out.count("5) Aerospike Secret Agent: 'secrets:<resource>:<key>'"), 2)
+
+
+LIB_SRC = utils.absolute_path("..", "modules", "secret-agent-client", "src", "main")
+MAIN_C = utils.absolute_path("..", "src", "main", "main.c")
+C_STRING = r'"(?:[^"\\]|\\.)*"'
+
+# Library log lines aql prints with their arguments, and the argument expressions reviewed as safe.
+REVIEWED_LOG_ARGS = {
+    "ERR: failed to lookup address: %s": "addr",
+    "ERR: connect failed: %d, errno: %d": "sock_fd, errno",
+    "ERR: response: %.*s": "(int)payload_len, payload_str",
+    "ERR: SSL_connect failed: %s": "errbuf",
+    "ERR: SSL_connect I/O error: %s": "errbuf",
+}
+
+
+def c_unescape(literal: str) -> str:
+    return literal[1:-1].encode().decode("unicode_escape")
+
+
+def call_text(src: str, start: int) -> str:
+    """Text between the parentheses of a call whose '(' ends just before start, skipping string literals."""
+    depth, i, in_string = 1, start, False
+    while depth:
+        c = src[i]
+        if in_string:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        i += 1
+    return src[start:i - 1]
+
+
+def library_log_calls() -> list[tuple[str, str | None, str]]:
+    calls = []
+    for path in sorted(glob.glob(os.path.join(LIB_SRC, "*.c"))):
+        with open(path) as f:
+            src = f.read()
+        for m in re.finditer(r"\bsa_g_log_function\s*\(", src):
+            where = "{}:{}".format(os.path.basename(path), src.count("\n", 0, m.start()) + 1)
+            text = call_text(src, m.end())
+            literal = re.match(r"\s*((?:{}\s*)+)(.*)$".format(C_STRING), text, re.S)
+            if literal is None:
+                calls.append((where, None, " ".join(text.split())))
+                continue
+            fmt = "".join(c_unescape(s) for s in re.findall(C_STRING, literal.group(1)))
+            calls.append((where, fmt, " ".join(literal.group(2).lstrip(",").split())))
+    return calls
+
+
+def aql_log_allow_list() -> list[str]:
+    with open(MAIN_C) as f:
+        src = f.read()
+    body = re.search(r"SA_LOG_ALLOW\[\]\s*=\s*\{(.*?)\n\};", src, re.S).group(1)
+    return [c_unescape(s) for s in re.findall(r"\{\s*(" + C_STRING + r")\s*,", body)]
+
+
+class SecretAgentLogFilterTest(unittest.TestCase):
+    """aql prints library log arguments only for allow-listed lines; a submodule bump must not slip past."""
+
+    def test_library_sources_found(self):
+        self.assertGreater(len(library_log_calls()), 20)
+
+    def test_allow_list_is_reviewed(self):
+        self.assertEqual(sorted(aql_log_allow_list()), sorted(REVIEWED_LOG_ARGS))
+
+    def test_every_library_log_line_is_allowed_or_truncated(self):
+        allowed = set(aql_log_allow_list())
+        seen = set()
+        problems = []
+
+        for where, fmt, args in library_log_calls():
+            if fmt is None:
+                problems.append("{}: format is not a string literal: {}".format(where, args))
+            elif fmt in allowed:
+                seen.add(fmt)
+                if args != REVIEWED_LOG_ARGS.get(fmt):
+                    problems.append("{}: allowed line {!r} now passes {!r}, review it".format(where, fmt, args))
+            elif "%" in fmt and not fmt[:fmt.index("%")].rstrip(" :,-("):
+                problems.append("{}: {!r} has no fixed text to print".format(where, fmt))
+
+        problems += ["allowed line {!r} is not in the library".format(fmt) for fmt in sorted(allowed - seen)]
+        self.assertEqual(problems, [])
 
 
 class SecretAgentTest(unittest.TestCase):
@@ -397,6 +519,9 @@ class SecretAgentTest(unittest.TestCase):
         cls.port = str(start_agent(cls, cls.dir, "tcp", None))
         cls.tls_port = str(start_agent(cls, cls.dir, "tls", (cls.cert, cert_key)))
         cls.closed = str(closed_port())
+
+        cls.literal_login = capture_login(["-U", "admin", "-P", SECRET])
+        cls.wrong_login = capture_login(["-U", "admin", "-P", "wrong"])
 
     def config(self, content: str) -> str:
         path = os.path.join(self.dir, "astools-{}.conf".format(uuid.uuid4().hex))
@@ -473,6 +598,24 @@ class SecretAgentTest(unittest.TestCase):
         rc, out = run(["-U", "admin"] + args)
 
         self.assert_password_resolved(rc, out)
+
+    def test_login_fixture_tells_passwords_apart(self):
+        self.assertNotEqual(self.literal_login, self.wrong_login)
+
+    def test_login_uses_secret_from_command_line(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.port])
+        self.assertEqual(login, self.literal_login)
+
+    def test_login_uses_wrong_secret_from_command_line(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:wrong", "--sa-port", self.port])
+        self.assertEqual(login, self.wrong_login)
+
+    def test_login_uses_secret_from_config_file(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = {}\n'.format(self.port)
+        )
+        self.assertEqual(capture_login([], config=config), self.literal_login)
 
     def test_password_from_config_file(self):
         config = self.config(

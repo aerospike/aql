@@ -24,7 +24,7 @@ ifdef M1_HOME_BREW
   OPENSSL_PREFIX = /opt/homebrew/opt/openssl
 endif
 
-# Same prefix as the OpenSSL libs below; on Linux it is absent and /usr/include is used.
+# Same prefix as the OpenSSL libs below. On Linux the default dir does not exist, so this -I is a no-op.
 ifeq ($(OPENSSL_STATIC_PATH),)
   OPENSSL_INCLUDE = $(abspath $(OPENSSL_PREFIX)/include)
 else

@@ -53,10 +53,18 @@
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
 
-// Secret agent client log lines whose arguments can echo the raw request or response bytes.
-static const char* const SA_LOG_NO_ARGS[] = {
-	"ERR: failed asking for secret",
-	"ERR: failed to parse response JSON"
+typedef struct sa_log_format_s {
+	const char* fmt;
+	bool add_strerror;
+} sa_log_format;
+
+// Secret agent client log lines whose arguments are safe to print; checked by test/secret_agent_test.py.
+static const sa_log_format SA_LOG_ALLOW[] = {
+	{"ERR: failed to lookup address: %s", false},
+	{"ERR: connect failed: %d, errno: %d", true},
+	{"ERR: response: %.*s", false},
+	{"ERR: SSL_connect failed: %s", false},
+	{"ERR: SSL_connect I/O error: %s", false}
 };
 
 
@@ -544,24 +552,31 @@ sa_log_cb(const char* fmt, ...)
 {
 	int err = errno;
 
-	for (size_t i = 0; i < sizeof(SA_LOG_NO_ARGS) / sizeof(SA_LOG_NO_ARGS[0]); i++) {
-		if (strncmp(fmt, SA_LOG_NO_ARGS[i], strlen(SA_LOG_NO_ARGS[i])) == 0) {
-			fprintf(stderr, "secret-agent: %s\n", SA_LOG_NO_ARGS[i]);
+	for (size_t i = 0; i < sizeof(SA_LOG_ALLOW) / sizeof(SA_LOG_ALLOW[0]); i++) {
+		if (strcmp(fmt, SA_LOG_ALLOW[i].fmt) == 0) {
+			va_list ap;
+			va_start(ap, fmt);
+			fprintf(stderr, "secret-agent: ");
+			vfprintf(stderr, fmt, ap);
+			va_end(ap);
+
+			if (SA_LOG_ALLOW[i].add_strerror) {
+				fprintf(stderr, " (%s)", strerror(err));
+			}
+
+			fprintf(stderr, "\n");
 			return;
 		}
 	}
 
-	va_list ap;
-	va_start(ap, fmt);
-	fprintf(stderr, "secret-agent: ");
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
+	// Any other line could echo request or response bytes: print its text up to the first '%'.
+	size_t len = strcspn(fmt, "%");
 
-	if (strncmp(fmt, "ERR: connect failed", 19) == 0) {
-		fprintf(stderr, " (%s)", strerror(err));
+	while (len != 0 && strchr(" :,-(", fmt[len - 1]) != NULL) {
+		len--;
 	}
 
-	fprintf(stderr, "\n");
+	fprintf(stderr, "secret-agent: %.*s\n", (int)len, fmt);
 }
 
 static const char*

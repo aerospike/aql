@@ -29,6 +29,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 
 #include <aerospike/mod_lua.h>
 #include <aerospike/mod_lua_config.h>
@@ -290,10 +291,11 @@ print_config_file_option()
 	fprintf(stdout, "                      Default: 127.0.0.1:3005\n");
 	fprintf(stdout, " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n");
 	fprintf(stdout, "                      Default: 3005\n");
-	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for Secret Agent requests.\n");
-	fprintf(stdout, "                      Default: 1000\n");
-	fprintf(stdout, " --sa-cafile=path     Path to a trusted CA certificate file. Enables TLS to\n");
-	fprintf(stdout, "                      the Secret Agent. Default: none\n");
+	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for Secret Agent requests, 1 or more.\n");
+	fprintf(stdout, "                      It does not apply to connecting. Default: 1000\n");
+	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS encryption to\n");
+	fprintf(stdout, "                      the Secret Agent, but the agent's certificate is not\n");
+	fprintf(stdout, "                      verified. Default: none\n");
 }
 
 void
@@ -602,7 +604,7 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 
 			case 1017:
 				if (! sa_parse_timeout(optarg, &base->sa.timeout_ms)) {
-					fprintf(stderr, "--sa-timeout: invalid value %s, expected an integer from 0 to %d\n",
+					fprintf(stderr, "--sa-timeout: invalid value %s, expected an integer from 1 to %d\n",
 							optarg, INT_MAX);
 					return false;
 				}
@@ -1264,7 +1266,7 @@ config_sa_timeout(toml_table_t* curtab, const char* name, int* ptr)
 {
 	int64_t ival;
 
-	if (0 != toml_rtoi(toml_raw_in(curtab, name), &ival) || ival < 0 || ival > INT_MAX) {
+	if (0 != toml_rtoi(toml_raw_in(curtab, name), &ival) || ival < 1 || ival > INT_MAX) {
 		return false;
 	}
 
@@ -1578,7 +1580,7 @@ sa_parse_timeout(const char* str, int* timeout_ms)
 {
 	long val;
 
-	if (! sa_parse_number(str, INT_MAX, &val)) {
+	if (! sa_parse_number(str, INT_MAX, &val) || val == 0) {
 		return false;
 	}
 
@@ -1601,13 +1603,14 @@ sa_parse_port(const char* str, char** port)
 	return true;
 }
 
-// Unbracketed with more than one colon is a bare IPv6 host.
+// Unbracketed with more than one colon must be a bare IPv6 address.
 static bool
 sa_parse_address(const char* address, char** host, char** port)
 {
 	const char* start = address;
 	const char* end;
 	const char* port_str = NULL;
+	struct in6_addr ipv6;
 
 	if (address[0] == '[') {
 		start = address + 1;
@@ -1628,6 +1631,9 @@ sa_parse_address(const char* address, char** host, char** port)
 		if (colon != NULL && strchr(colon + 1, ':') == NULL) {
 			end = colon;
 			port_str = colon + 1;
+		}
+		else if (colon != NULL && inet_pton(AF_INET6, address, &ipv6) != 1) {
+			return false;
 		}
 	}
 
