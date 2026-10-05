@@ -19,6 +19,8 @@
 // Includes.
 //
 
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,6 +29,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 
 #include <aerospike/mod_lua.h>
 #include <aerospike/mod_lua_config.h>
@@ -48,6 +51,10 @@
 
 #define ASQL_CONFIG_FILE ".aerospike/astools.conf"
 #define ERR_BUF_SIZE 1024
+
+#define SA_DEFAULT_HOST "127.0.0.1"
+#define SA_DEFAULT_PORT "3005"
+#define SA_DEFAULT_TIMEOUT_MS 1000
 
 //=========================================================
 // Inline and Macros.
@@ -109,6 +116,10 @@ static struct option options[] =
 	{"timeout", required_argument, 0, 'T'},
 	{"socket-timeout", required_argument, 0, 1013},
 	{"udfuser", required_argument, 0, 'u'},
+	{"sa-address", required_argument, 0, 1015},
+	{"sa-port", required_argument, 0, 1016},
+	{"sa-timeout", required_argument, 0, 1017},
+	{"sa-cafile", required_argument, 0, 1018},
 
 	// Legacy
 	{"tlsEnable", no_argument, 0, 1000},
@@ -137,11 +148,15 @@ static bool print_option(uint16_t i);
 static bool set(uint16_t i, char* value);
 static char* safe_strdup(char* in, char* val);
 
+static bool sa_parse_timeout(const char* str, int* timeout_ms);
+static const char* sa_apply(asql_sa_config* sa, const char* address, const char* port);
+
 static bool config_str(toml_table_t* curtab, const char* name, char** ptr);
 static bool config_int(toml_table_t* curtab, const char* name, int* ptr);
 static bool config_bool(toml_table_t* curtab, const char* name, bool* ptr);
 static bool config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char errbuf[]);
 static bool config_aql(toml_table_t* conftab, asql_config* c, const char* instance, char errbuf[]);
+static bool config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance, char errbuf[]);
 static bool config_include(toml_table_t* conftab, asql_config* c, const char* instance, int level);
 
 static bool config_parse_file(const char* fname, toml_table_t** tab, char errbuf[]);
@@ -187,7 +202,8 @@ print_config_file_option()
                     "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
                     "                      3) Base64 encoded string: 'b64:<VALUE>'\n"
                     "                      4) File: 'file:<PATH>'\n"
-                    "                      5) String: 'PASSWORD'\n"
+                    "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+                    "                      6) String: 'PASSWORD'\n"
                     "                      User will be prompted on command line if -P specified and no\n"
                     "                      password is given.\n");
 	fprintf(stdout, " --auth\n");
@@ -225,7 +241,8 @@ print_config_file_option()
                     "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
                     "                      3) Base64 encoded string: 'b64:<VALUE>'\n"
                     "                      4) File: 'file:<PATH>'\n"
-                    "                      5) String: 'PASSWORD'\n"
+                    "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+                    "                      6) String: 'PASSWORD'\n"
                     "                      Default: none\n"
                     "                      User will be prompted on command line if --tls-keyfile-password\n"
                     "                      specified and no password is given.\n");
@@ -265,6 +282,22 @@ print_config_file_option()
 	fprintf(stdout, "                      Default for other commands: 0 (no socket idle time limit)\n");
 	fprintf(stdout, " -u, --udfuser=path   Path to User managed UDF modules.\n");
 	fprintf(stdout, "                      Default: /opt/aerospike/usr/udf/lua\n");
+
+	fprintf(stdout, "[secret-agent]\n");
+	fprintf(stdout, " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.\n");
+	fprintf(stdout, " --sa-address=HOST\n");
+	fprintf(stdout, "                      HOST is \"<host>[:<port>]\" or \"[<ipv6>][:<port>]\".\n");
+	fprintf(stdout, "                      Secret Agent hostname or IP address.\n");
+	fprintf(stdout, "                      Default: 127.0.0.1:3005\n");
+	fprintf(stdout, " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n");
+	fprintf(stdout, "                      Default: 3005\n");
+	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n");
+	fprintf(stdout, "                      covers the TCP connect, the TLS handshake and the request,\n");
+	fprintf(stdout, "                      but not the name lookup. Default: 1000\n");
+	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n");
+	fprintf(stdout, "                      Agent and verifies its certificate against this CA. The\n");
+	fprintf(stdout, "                      agent's hostname or IP address must be in the certificate.\n");
+	fprintf(stdout, "                      Default: none\n");
 }
 
 void
@@ -291,13 +324,13 @@ print_config_help(int argc, char* argv[])
 	fprintf(stdout, "\n\n");
 	fprintf(stdout, "Default configuration files are read from the following files in the given order:\n");
 	fprintf(stdout, "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n");
-	fprintf(stdout, "The following sections are read: (cluster aql include)\n");
+	fprintf(stdout, "The following sections are read: (cluster aql secret-agent include)\n");
 	fprintf(stdout, "The following options effect configuration file behavior\n");
 	fprintf(stdout, " --no-config-file \n");
 	fprintf(stdout, "                      Do not read any config file. Default: disabled\n");
 	fprintf(stdout, " --instance=name\n");
 	fprintf(stdout, "                      Section with these instance is read. e.g in case instance `a` is specified\n");
-	fprintf(stdout, "                      sections cluster_a, aql_a is read.\n");
+	fprintf(stdout, "                      sections cluster_a, aql_a, secret-agent_a is read.\n");
 	fprintf(stdout, " --config-file=path\n");
 	fprintf(stdout, "                      Read this file after default configuration file.\n");
 	fprintf(stdout, " --only-config-file=path\n");
@@ -389,6 +422,8 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 	// DEBUG
 	// print_base_config(conf);
 	asql_base_config* base = &conf->base;
+	const char* sa_address = NULL;
+	const char* sa_port = NULL;
 
 	// Reset to optind (internal variable)
 	// to parse all options again
@@ -561,10 +596,38 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 				base->lua_userpath = safe_strdup(base->lua_userpath, optarg);
 				break;
 
+			case 1015:
+				sa_address = optarg;
+				break;
+
+			case 1016:
+				sa_port = optarg;
+				break;
+
+			case 1017:
+				if (! sa_parse_timeout(optarg, &base->sa.timeout_ms)) {
+					fprintf(stderr, "--sa-timeout: invalid value %s, expected an integer from 1 to %d\n",
+							optarg, INT_MAX);
+					return false;
+				}
+				break;
+
+			case 1018:
+				base->sa.cafile = safe_strdup(base->sa.cafile, optarg);
+				break;
+
 			default:
 				print_config_help(argc, argv);
 				return false;
 		}
+	}
+
+	const char* bad_sa_option = sa_apply(&base->sa, sa_address, sa_port);
+
+	if (bad_sa_option) {
+		fprintf(stderr, "--%s: invalid value %s\n", bad_sa_option,
+				strcmp(bad_sa_option, "sa-port") == 0 ? sa_port : sa_address);
+		return false;
 	}
 
 	switch (base->outputmode) {
@@ -630,6 +693,10 @@ config_free(asql_config* conf)
 	if (base->lua_userpath) {
 		free(base->lua_userpath);
 	}
+
+	free(base->sa.host);
+	free(base->sa.port);
+	free(base->sa.cafile);
 }
 
 
@@ -1178,6 +1245,107 @@ config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char
 }
 
 static bool
+config_sa_port(toml_table_t* curtab, const char* name, char** ptr)
+{
+	if (config_str(curtab, name, ptr)) {
+		return true;
+	}
+
+	int64_t ival;
+
+	if (0 != toml_rtoi(toml_raw_in(curtab, name), &ival)) {
+		return false;
+	}
+
+	char port[32];
+	snprintf(port, sizeof(port), "%lld", (long long)ival);
+	*ptr = strdup(port);
+	return true;
+}
+
+static bool
+config_sa_timeout(toml_table_t* curtab, const char* name, int* ptr)
+{
+	int64_t ival;
+
+	if (0 != toml_rtoi(toml_raw_in(curtab, name), &ival) || ival < 1 || ival > INT_MAX) {
+		return false;
+	}
+
+	*ptr = (int)ival;
+	return true;
+}
+
+static bool
+config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance, char errbuf[])
+{
+	// Defaults to "secret-agent" section, replaced by the instance section if it exists.
+	char section[256] = {"secret-agent"};
+	toml_table_t* curtab = toml_table_in(conftab, section);
+
+	if (instance) {
+		char instance_section[256];
+		snprintf(instance_section, sizeof(instance_section), "secret-agent_%s", instance);
+
+		if (toml_table_in(conftab, instance_section)) {
+			curtab = toml_table_in(conftab, instance_section);
+			strcpy(section, instance_section);
+		}
+	}
+
+	if (! curtab) {
+		return true;
+	}
+
+	char* address = NULL;
+	char* port = NULL;
+	const char* name;
+	bool status = true;
+
+	for (uint8_t i = 0; status && 0 != (name = toml_key_in(curtab, i)); i++) {
+
+		if (! strcasecmp("sa-address", name)) {
+			status = config_str(curtab, name, &address);
+
+		} else if (! strcasecmp("sa-port", name)) {
+			status = config_sa_port(curtab, name, &port);
+
+		} else if (! strcasecmp("sa-timeout", name)) {
+			status = config_sa_timeout(curtab, name, &c->base.sa.timeout_ms);
+
+		} else if (! strcasecmp("sa-cafile", name)) {
+			status = config_str(curtab, name, &c->base.sa.cafile);
+
+		} else {
+			snprintf(errbuf, ERR_BUF_SIZE, "Unknown parameter `%s` in `%s` section.\n", name,
+					section);
+			free(address);
+			free(port);
+			return false;
+		}
+
+		if (! status) {
+			snprintf(errbuf, ERR_BUF_SIZE, "Invalid parameter value for `%s` in `%s` section.\n",
+					name, section);
+		}
+	}
+
+	if (status) {
+		const char* bad = sa_apply(&c->base.sa, address, port);
+
+		if (bad) {
+			snprintf(errbuf, ERR_BUF_SIZE, "Invalid parameter value for `%s` in `%s` section.\n",
+					bad, section);
+			status = false;
+		}
+	}
+
+	free(address);
+	free(port);
+	return status;
+}
+
+static bool
 config_from_dir(asql_config* c, const char* instance, char* dirname, int level)
 {
 	DIR* dp;
@@ -1295,6 +1463,9 @@ config_from_file(asql_config* c, const char* instance, const char* fname, int le
 	else if (! config_aql(conftab, c, instance, errbuf)) {
 		status = false;
 	}
+	else if (! config_secret_agent(conftab, c, instance, errbuf)) {
+		status = false;
+	}
 	else if (! config_include(conftab, c, instance, level)) {
 		status = false;
 	}
@@ -1345,6 +1516,11 @@ config_default(asql_config* c, const char* instance)
 	c->base.password = strdup(DEFAULTPASSWORD);
 
 	memset(&c->base.tls, 0, sizeof(as_config_tls));
+
+	c->base.sa.host = strdup(SA_DEFAULT_HOST);
+	c->base.sa.port = strdup(SA_DEFAULT_PORT);
+	c->base.sa.timeout_ms = SA_DEFAULT_TIMEOUT_MS;
+	c->base.sa.cafile = NULL;
 }
 
 static bool
@@ -1380,6 +1556,156 @@ safe_strdup(char* in, char* val)
 	}
 	in = strdup(val);
 	return in;
+}
+
+static bool
+sa_parse_number(const char* str, long max, long* val)
+{
+	if (str[0] < '0' || str[0] > '9') {
+		return false;
+	}
+
+	char* end;
+	errno = 0;
+	long v = strtol(str, &end, 10);
+
+	if (errno != 0 || *end != 0 || v > max) {
+		return false;
+	}
+
+	*val = v;
+	return true;
+}
+
+static bool
+sa_parse_timeout(const char* str, int* timeout_ms)
+{
+	long val;
+
+	if (! sa_parse_number(str, INT_MAX, &val) || val == 0) {
+		return false;
+	}
+
+	*timeout_ms = (int)val;
+	return true;
+}
+
+static bool
+sa_parse_port(const char* str, char** port)
+{
+	long val;
+
+	if (! sa_parse_number(str, 65535, &val) || val == 0) {
+		return false;
+	}
+
+	char buf[8];
+	snprintf(buf, sizeof(buf), "%ld", val);
+	*port = strdup(buf);
+	return true;
+}
+
+// The zone ("fe80::1%lo0") is checked by the resolver later; glibc's inet_pton rejects it.
+static bool
+sa_is_ipv6(const char* host, size_t len)
+{
+	const char* zone = memchr(host, '%', len);
+	size_t addr_len = zone != NULL ? (size_t)(zone - host) : len;
+	char buf[INET6_ADDRSTRLEN];
+	struct in6_addr ipv6;
+
+	if (addr_len >= sizeof(buf) || (zone != NULL && addr_len + 1 == len)) {
+		return false;
+	}
+
+	memcpy(buf, host, addr_len);
+	buf[addr_len] = 0;
+	return inet_pton(AF_INET6, buf, &ipv6) == 1;
+}
+
+// A bracketed host or one with a colon must be IPv6; unbracketed, a single colon separates the port.
+static bool
+sa_parse_address(const char* address, char** host, char** port)
+{
+	bool bracketed = address[0] == '[';
+	const char* start = address;
+	const char* end;
+	const char* port_str = NULL;
+
+	if (bracketed) {
+		start = address + 1;
+		end = strchr(start, ']');
+
+		if (end == NULL || (end[1] != 0 && end[1] != ':')) {
+			return false;
+		}
+
+		if (end[1] == ':') {
+			port_str = end + 2;
+		}
+	}
+	else {
+		const char* colon = strchr(address, ':');
+		end = address + strlen(address);
+
+		if (colon != NULL && strchr(colon + 1, ':') == NULL) {
+			end = colon;
+			port_str = colon + 1;
+		}
+	}
+
+	if (end == start) {
+		return false;
+	}
+
+	if ((bracketed || memchr(start, ':', end - start) != NULL) && ! sa_is_ipv6(start, end - start)) {
+		return false;
+	}
+
+	if (port_str != NULL && ! sa_parse_port(port_str, port)) {
+		return false;
+	}
+
+	*host = strndup(start, end - start);
+	return true;
+}
+
+// Applies one source (a config section or the command line); its explicit port beats its address port.
+static const char*
+sa_apply(asql_sa_config* sa, const char* address, const char* port)
+{
+	char* new_host = NULL;
+	char* addr_port = NULL;
+	char* new_port = NULL;
+
+	if (address && ! sa_parse_address(address, &new_host, &addr_port)) {
+		return "sa-address";
+	}
+
+	if (port && ! sa_parse_port(port, &new_port)) {
+		free(new_host);
+		free(addr_port);
+		return "sa-port";
+	}
+
+	if (new_host) {
+		free(sa->host);
+		sa->host = new_host;
+	}
+
+	if (new_port) {
+		free(addr_port);
+	}
+	else {
+		new_port = addr_port;
+	}
+
+	if (new_port) {
+		free(sa->port);
+		sa->port = new_port;
+	}
+
+	return NULL;
 }
 
 #if 0
