@@ -160,6 +160,11 @@ class PasswordSourceTest(unittest.TestCase):
             ("pw", (SECRET + "\n").encode()),
             ("pw_crlf", (SECRET + "\r\n").encode()),
             ("pw_bare", SECRET.encode()),
+            ("pw_blank_lines", (SECRET + "\n\n").encode()),
+            ("pw_crlf_blank_lines", (SECRET + "\r\n\r\n").encode()),
+            ("pw_cr", (SECRET + "\r").encode()),
+            ("pw_more_lines", (SECRET + "\nmore").encode()),
+            ("leading_newline", ("\n" + SECRET).encode()),
         ]:
             path = os.path.join(cls.dir, name)
             with open(path, "wb") as f:
@@ -220,15 +225,34 @@ class PasswordSourceTest(unittest.TestCase):
             ("file", "file:{pw}", {}),
             ("file_crlf", "file:{pw_crlf}", {}),
             ("file_no_newline", "file:{pw_bare}", {}),
+            ("file_first_line_blank_lines", "file:{pw_blank_lines}", {}),
+            ("file_first_line_crlf_blank_lines", "file:{pw_crlf_blank_lines}", {}),
+            ("file_first_line_cr", "file:{pw_cr}", {}),
+            ("file_first_line_more_lines", "file:{pw_more_lines}", {}),
         ]
     )
     def test_tls_keyfile_password_resolves(self, _, value, env):
-        value = value.format(pw=self.pw, pw_crlf=self.pw_crlf, pw_bare=self.pw_bare)
+        value = value.format(
+            pw=self.pw,
+            pw_crlf=self.pw_crlf,
+            pw_bare=self.pw_bare,
+            pw_blank_lines=self.pw_blank_lines,
+            pw_crlf_blank_lines=self.pw_crlf_blank_lines,
+            pw_cr=self.pw_cr,
+            pw_more_lines=self.pw_more_lines,
+        )
         rc, out = run(["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password", value], env)
 
         self.assertNotEqual(rc, 0)
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_file_with_empty_first_line(self):
+        rc, out = run(self.option_args("--tls-keyfile-password") + ["--tls-keyfile-password=file:" + self.leading_newline])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--tls-keyfile-password: file {} is empty\n".format(self.leading_newline), out)
+        self.assertNotIn(CONNECT_FAILED, out)
 
     @parameterized.expand(
         [
@@ -312,11 +336,19 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotIn("--password:", out)
         self.assertIn(CONNECT_FAILED, out)
 
-    def test_prompted_tls_keyfile_password_is_literal(self):
-        out = run_with_prompt(
-            ["--tls-enable", "--tls-keyfile", self.parsed_looking_key, "--tls-keyfile-password"],
-            PARSED_LOOKING_SECRET,
-        )
+    @parameterized.expand(
+        [
+            ("literal", SECRET),
+            ("env", "env:" + VAR),
+            ("file_first_line", "file:{pw_more_lines}"),
+        ]
+    )
+    def test_prompted_tls_keyfile_password_resolves(self, _, typed):
+        with mock.patch.dict(os.environ, {VAR: SECRET}):
+            out = run_with_prompt(
+                ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password"],
+                typed.format(pw_more_lines=self.pw_more_lines),
+            )
 
         self.assertIn("Enter TLS-Keyfile Password: ", out)
         self.assertNotIn("--tls-keyfile-password:", out)
@@ -353,6 +385,13 @@ class PasswordReachesServerTest(unittest.TestCase):
             f.write('[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
 
         self.assertEqual(capture_login([], {VAR: SECRET}, config), literal_login(SECRET))
+
+    def test_file_keeps_every_line(self):
+        path = os.path.join(self.dir, "pw")
+        with open(path, "w") as f:
+            f.write(SECRET + "\nmore\n")
+
+        self.assertEqual(capture_login(["-U", "admin", "-P", "file:" + path]), literal_login(SECRET + "\nmore"))
 
 
 class PasswordLengthTest(unittest.TestCase):

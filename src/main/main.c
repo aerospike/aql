@@ -78,7 +78,7 @@ static void sig_hdlr(int sig_num);
 static void sig_hdlr_init();
 static bool client_log_cb(as_log_level level, const char* func, const char* file, uint32_t line, const char* fmt, ...);
 
-static bool read_password(const char* opt, char** ptr, size_t max_len);
+static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
 static void add_tls_host(asql_config* c, as_config* config);
 
 //=========================================================
@@ -276,7 +276,7 @@ asql_init(asql_config* c)
 			free(c->base.password);
 			c->base.password = strdup(getpass("Enter Password: "));
 		}
-		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1)) {
+		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1, false)) {
 			return false;
 		}
 
@@ -307,7 +307,8 @@ asql_init(asql_config* c)
 			free(c->base.tls.keyfile_pw);
 			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
-		else if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0)) {
+
+		if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0, true)) {
 			return false;
 		}
 	}
@@ -421,7 +422,7 @@ password_env(const char* opt, const char* var)
 }
 
 static char*
-password_file(const char* opt, const char* path)
+password_file(const char* opt, const char* path, bool first_line)
 {
 	FILE* fh = fopen(path, "r");
 
@@ -457,7 +458,13 @@ password_file(const char* opt, const char* path)
 		return NULL;
 	}
 
-	if (len != 0 && pw[len - 1] == '\n') {
+	pw[len] = 0;
+
+	// --tls-keyfile-password has always used only the first line.
+	if (first_line) {
+		len = strcspn(pw, "\r\n");
+	}
+	else if (len != 0 && pw[len - 1] == '\n') {
 		len--;
 
 		if (len != 0 && pw[len - 1] == '\r') {
@@ -517,7 +524,7 @@ password_fit(const char* opt, char* pw, size_t max_len, const char* what, const 
 }
 
 static bool
-read_password(const char* opt, char** ptr, size_t max_len)
+read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 {
 	const char* value = *ptr;
 	char* pw;
@@ -577,7 +584,7 @@ read_password(const char* opt, char** ptr, size_t max_len)
 	else if (strncmp(value, "file:", 5) == 0) {
 		const char* path = value + 5;
 
-		if ((pw = password_file(opt, path)) == NULL ||
+		if ((pw = password_file(opt, path, first_line)) == NULL ||
 				(pw = password_fit(opt, pw, max_len, "value from file ", path)) == NULL) {
 			return false;
 		}
