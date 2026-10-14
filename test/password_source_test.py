@@ -20,6 +20,7 @@ import utils
 SECRET = "s3cret"
 PARSED_LOOKING_SECRET = "env:AQL_TEST_NEVER_SET"
 VAR = "AQL_TEST_PW"
+OTHER_VAR = "AQL_TEST_OTHER_PW"
 UNREACHABLE = ["-h", "127.0.0.1", "-p", "1", "-c", "show namespaces"]
 CONNECT_FAILED = "Error -10:"
 TLS_KEY_FAILED = "Error -9:"
@@ -382,6 +383,7 @@ class PasswordSourceTest(unittest.TestCase):
         [
             ("literal", SECRET),
             ("env", "env:" + VAR),
+            ("b64", "b64:" + b64(SECRET)),
             ("file_first_line", "file:{pw_more_lines}"),
         ]
     )
@@ -420,6 +422,26 @@ class PasswordReachesServerTest(unittest.TestCase):
 
     def test_command_line_wrong_value(self):
         self.assertEqual(capture_login(["-U", "admin", "-P", "env:" + VAR], {VAR: "wrong"}), literal_login("wrong"))
+
+    @parameterized.expand(
+        [
+            ("unknown_prefix", "pass:word"),
+            ("uppercase_env", "ENV:" + VAR),
+            ("uppercase_b64", "B64:" + b64(SECRET)),
+        ]
+    )
+    def test_unrecognized_prefix_is_literal(self, _, value):
+        typed = capture_login(["-U", "admin", "-P", value], {VAR: SECRET})
+
+        self.assertNotEqual(typed, literal_login(SECRET))
+        self.assertEqual(typed, capture_login(["-U", "admin", "-P", "env:" + VAR], {VAR: value}))
+
+    def test_resolved_value_is_sent_as_is(self):
+        env = {VAR: "env:" + OTHER_VAR, OTHER_VAR: SECRET}
+        via_env = capture_login(["-U", "admin", "-P", "env:" + VAR], env)
+
+        self.assertNotEqual(via_env, literal_login(SECRET))
+        self.assertEqual(via_env, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + OTHER_VAR)], env))
 
     def test_config_file(self):
         config = os.path.join(self.dir, "astools.conf")
