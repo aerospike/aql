@@ -221,10 +221,13 @@ class PasswordSourceTest(unittest.TestCase):
                 ("file_missing", "file:{missing}", {}, "cannot read file {missing}: No such file or directory"),
                 ("file_directory", "file:{subdir}", {}, "cannot read file {subdir}: Is a directory"),
                 ("file_empty", "file:{empty}", {}, "file {empty} is empty"),
-                ("file_newline_only", "file:{newline}", {}, "file {newline} is empty"),
                 ("file_nul", "file:{nul}", {}, "file {nul} contains a NUL byte"),
                 ("file_dev_zero", "file:/dev/zero", {}, "file /dev/zero contains a NUL byte"),
             ]
+        ]
+        + [
+            ("password_file_newline_only", "--password", "file:{newline}", {}, "file {newline} is empty"),
+            ("tls_keyfile_password_file_newline_only", "--tls-keyfile-password", "file:{newline}", {}, "first line of file {newline} is empty"),
         ]
     )
     def test_error(self, _, opt, value, env, expected):
@@ -283,7 +286,7 @@ class PasswordSourceTest(unittest.TestCase):
         rc, out = run(self.option_args("--tls-keyfile-password") + ["--tls-keyfile-password=file:" + self.leading_newline])
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("--tls-keyfile-password: file {} is empty\n".format(self.leading_newline), out)
+        self.assertIn("--tls-keyfile-password: first line of file {} is empty\n".format(self.leading_newline), out)
         self.assertNotIn(CONNECT_FAILED, out)
 
     def test_tls_keyfile_password_file_stops_at_first_line(self):
@@ -458,7 +461,7 @@ class PasswordLengthTest(unittest.TestCase):
         if form == "env":
             return "env:" + VAR, {VAR: password}, "value from environment variable " + VAR
         if form.startswith("env_b64"):
-            return "env-b64:" + VAR, {VAR: b64(password + ending)}, "value from environment variable " + VAR
+            return "env-b64:" + VAR, {VAR: b64(password + ending)}, "decoded value from environment variable " + VAR
         return "b64:" + b64(password + ending), {}, "decoded b64: value"
 
     @parameterized.expand([(form,) for form in FORMS])

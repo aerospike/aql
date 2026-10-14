@@ -185,11 +185,13 @@ print_config_file_option()
                     "                      It can be one of the following:\n"
                     "                      1) Environment variable: 'env:<VAR>'\n"
                     "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
-                    "                      3) Base64 encoded string: 'b64:<VALUE>'\n"
-                    "                      4) File: 'file:<PATH>'\n"
+                    "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+                    "                      4) File: 'file:<PATH>', the whole file less one trailing\n"
+                    "                         line ending\n"
                     "                      5) String: 'PASSWORD'\n"
+                    "                      A password read from 1) to 4) must be at most 63 bytes.\n"
                     "                      User will be prompted on command line if -P specified and no\n"
-                    "                      password is given.\n");
+                    "                      password is given. The typed password is used as is.\n");
 	fprintf(stdout, " --auth\n");
 	fprintf(stdout, "                      Set authentication mode when user/password is defined. Modes are\n");
 	fprintf(stdout, "                      (INTERNAL, EXTERNAL, EXTERNAL_INSECURE, PKI). Default: INTERNAL\n");
@@ -223,12 +225,14 @@ print_config_file_option()
                     "                      It can be one of the following:\n"
                     "                      1) Environment variable: 'env:<VAR>'\n"
                     "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
-                    "                      3) Base64 encoded string: 'b64:<VALUE>'\n"
-                    "                      4) File: 'file:<PATH>'\n"
+                    "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+                    "                      4) File: 'file:<PATH>', the first line of the file, at\n"
+                    "                         most 4999 bytes\n"
                     "                      5) String: 'PASSWORD'\n"
                     "                      Default: none\n"
                     "                      User will be prompted on command line if --tls-keyfile-password\n"
-                    "                      specified and no password is given.\n");
+                    "                      specified and no password is given. The typed password\n"
+                    "                      accepts the forms above.\n");
 	fprintf(stdout, " --tls-certfile=TLS_CERTFILE <path>\n");
 	fprintf(stdout, "                      Path to the chain file for mutual authentication (if\n"
                     "                      Aerospike Cluster is supporting it).\n");

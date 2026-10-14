@@ -492,7 +492,8 @@ password_file(const char* opt, const char* path, size_t max_len, bool first_line
 	pw[len] = 0;
 
 	if (len == 0) {
-		fprintf(stderr, "%s: file %s is empty\n", opt, path);
+		fprintf(stderr, "%s: %sfile %s is empty\n", opt,
+				first_line && c != EOF ? "first line of " : "", path);
 		free(pw);
 		return NULL;
 	}
@@ -587,7 +588,7 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 		free(b64);
 
 		if (pw == NULL ||
-				(pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
+				(pw = password_fit(opt, pw, max_len, "decoded value from environment variable ", var)) == NULL) {
 			return false;
 		}
 	}
