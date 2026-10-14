@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import functools
 import glob
 import os
@@ -40,13 +41,38 @@ def make_key(path: str, password: str):
     )
 
 
-def run(args, env=None, config=None):
+def run(args, env=None, config=None, timeout=None):
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     with mock.patch.dict(os.environ, {}):
         os.environ.pop(VAR, None)
         os.environ.update(env or {})
-        out = utils.run_aql(conf + args + UNREACHABLE)
+        out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout)
     return out.returncode, out.stdout.decode() + out.stderr.decode()
+
+
+@contextlib.contextmanager
+def fifo(path: str, data: bytes, endless: bool = False):
+    """Feeds data through a FIFO at path and holds the write end open until the block exits."""
+    os.mkfifo(path)
+    done = threading.Event()
+
+    def write():
+        try:
+            with open(path, "wb", buffering=0) as f:
+                f.write(data)
+                while endless and not done.is_set():
+                    f.write(data)
+                done.wait()
+        except BrokenPipeError:
+            pass
+
+    thread = threading.Thread(target=write, daemon=True)
+    thread.start()
+    try:
+        yield path
+    finally:
+        done.set()
+        thread.join(5)
 
 
 def recv_exact(conn, size: int) -> bytes:
@@ -165,6 +191,7 @@ class PasswordSourceTest(unittest.TestCase):
             ("pw_cr", (SECRET + "\r").encode()),
             ("pw_more_lines", (SECRET + "\nmore").encode()),
             ("leading_newline", ("\n" + SECRET).encode()),
+            ("nul", b"\0" + SECRET.encode() + b"\n"),
         ]:
             path = os.path.join(cls.dir, name)
             with open(path, "wb") as f:
@@ -193,6 +220,8 @@ class PasswordSourceTest(unittest.TestCase):
                 ("file_directory", "file:{subdir}", {}, "cannot read file {subdir}: Is a directory"),
                 ("file_empty", "file:{empty}", {}, "file {empty} is empty"),
                 ("file_newline_only", "file:{newline}", {}, "file {newline} is empty"),
+                ("file_nul", "file:{nul}", {}, "file {nul} contains a NUL byte"),
+                ("file_dev_zero", "file:/dev/zero", {}, "file /dev/zero contains a NUL byte"),
             ]
         ]
     )
@@ -203,6 +232,7 @@ class PasswordSourceTest(unittest.TestCase):
             "subdir": self.subdir,
             "empty": self.empty,
             "newline": self.newline,
+            "nul": self.nul,
         }
         value = value.format(**names)
         rc, out = run(self.option_args(opt) + [opt + "=" + value], env)
@@ -253,6 +283,13 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn("--tls-keyfile-password: file {} is empty\n".format(self.leading_newline), out)
         self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_file_stops_at_first_line(self):
+        with fifo(os.path.join(self.dir, "keyfile-fifo"), (SECRET + "\n").encode()) as path:
+            rc, out = run(self.option_args("--tls-keyfile-password") + ["--tls-keyfile-password=file:" + path], timeout=10)
+
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
 
     @parameterized.expand(
         [
@@ -446,7 +483,15 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertIn("Invalid password for user name `admin`", out)
         self.assertNotIn("longer than", out)
 
-    def test_tls_keyfile_password_has_no_limit(self):
+    def test_endless_file_is_rejected(self):
+        with fifo(os.path.join(self.dir, "endless"), b"p" * 4096, endless=True) as path:
+            rc, out = run(["-U", "admin", "-P", "file:" + path], timeout=10)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: value from file {} is longer than 63 bytes\n".format(path), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_from_env_has_no_limit(self):
         password = "k" * 100
         key = os.path.join(self.dir, "long-key.pem")
         make_key(key, password)
@@ -455,6 +500,26 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertNotIn("longer than", out)
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("longest", 4999, False), ("too_long", 5000, True)])
+    def test_tls_keyfile_password_file_limit(self, _, size, rejected):
+        key = os.path.join(self.dir, "key.pem")
+        if not os.path.exists(key):
+            make_key(key, SECRET)
+        path = os.path.join(self.dir, "keyfile-pw-{}".format(size))
+        with open(path, "w") as f:
+            f.write("k" * size + "\nmore\n")
+
+        rc, out = run(["--tls-enable", "--tls-keyfile", key, "--tls-keyfile-password", "file:" + path])
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("k" * size, out)
+        if rejected:
+            self.assertIn("--tls-keyfile-password: value from file {} is longer than 4999 bytes\n".format(path), out)
+            self.assertNotIn(TLS_KEY_FAILED, out)
+        else:
+            self.assertNotIn("longer than", out)
+            self.assertIn(TLS_KEY_FAILED, out)
 
 
 if __name__ == "__main__":

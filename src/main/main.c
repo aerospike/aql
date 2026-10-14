@@ -50,6 +50,7 @@
 
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
+#define PASSWORD_FILE_MAX_LEN 4999
 
 
 //=========================================================
@@ -422,7 +423,7 @@ password_env(const char* opt, const char* var)
 }
 
 static char*
-password_file(const char* opt, const char* path, bool first_line)
+password_file(const char* opt, const char* path, size_t max_len, bool first_line)
 {
 	FILE* fh = fopen(path, "r");
 
@@ -432,18 +433,27 @@ password_file(const char* opt, const char* path, bool first_line)
 		return NULL;
 	}
 
-	size_t cap = 256;
+	// Room for a trailing \r\n and one byte more, so an over-long value is
+	// caught without reading the rest of the file.
+	size_t cap = max_len + 3;
+	char* pw = malloc(cap + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory reading file %s\n", opt, path);
+		fclose(fh);
+		return NULL;
+	}
+
 	size_t len = 0;
-	char* pw = malloc(cap);
-	size_t n;
+	int c = EOF;
 
-	while ((n = fread(pw + len, 1, cap - len - 1, fh)) != 0) {
-		len += n;
-
-		if (len == cap - 1) {
-			cap *= 2;
-			pw = realloc(pw, cap);
+	while (len < cap && (c = getc(fh)) != EOF && c != 0) {
+		// --tls-keyfile-password has always used only the first line.
+		if (first_line && (c == '\n' || c == '\r')) {
+			break;
 		}
+
+		pw[len++] = (char)c;
 	}
 
 	bool failed = ferror(fh) != 0;
@@ -458,13 +468,13 @@ password_file(const char* opt, const char* path, bool first_line)
 		return NULL;
 	}
 
-	pw[len] = 0;
-
-	// --tls-keyfile-password has always used only the first line.
-	if (first_line) {
-		len = strcspn(pw, "\r\n");
+	if (c == 0) {
+		fprintf(stderr, "%s: file %s contains a NUL byte\n", opt, path);
+		free(pw);
+		return NULL;
 	}
-	else if (len != 0 && pw[len - 1] == '\n') {
+
+	if (len != 0 && pw[len - 1] == '\n') {
 		len--;
 
 		if (len != 0 && pw[len - 1] == '\r') {
@@ -583,9 +593,10 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 	}
 	else if (strncmp(value, "file:", 5) == 0) {
 		const char* path = value + 5;
+		size_t file_max = max_len != 0 ? max_len : PASSWORD_FILE_MAX_LEN;
 
-		if ((pw = password_file(opt, path, first_line)) == NULL ||
-				(pw = password_fit(opt, pw, max_len, "value from file ", path)) == NULL) {
+		if ((pw = password_file(opt, path, file_max, first_line)) == NULL ||
+				(pw = password_fit(opt, pw, file_max, "value from file ", path)) == NULL) {
 			return false;
 		}
 	}
