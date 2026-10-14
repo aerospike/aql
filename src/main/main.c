@@ -19,17 +19,20 @@
 // Includes.
 //
 
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
 
 #include <aerospike/as_log_macros.h>
 #include <aerospike/as_scan.h>
+#include <citrusleaf/cf_b64.h>
 
 #include "asql.h"
 #include "asql_conf.h"
@@ -47,6 +50,7 @@
 
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
+#define PASSWORD_FILE_MAX_LEN 4999
 
 
 //=========================================================
@@ -75,7 +79,7 @@ static void sig_hdlr(int sig_num);
 static void sig_hdlr_init();
 static bool client_log_cb(as_log_level level, const char* func, const char* file, uint32_t line, const char* fmt, ...);
 
-static bool tls_read_password(char* value, char** ptr);
+static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
 static void add_tls_host(asql_config* c, as_config* config);
 
 //=========================================================
@@ -270,7 +274,11 @@ asql_init(asql_config* c)
 	if (c->base.user) {
 		// Prompt after first screen
 		if (strcmp(c->base.password, DEFAULTPASSWORD) == 0) {
+			free(c->base.password);
 			c->base.password = strdup(getpass("Enter Password: "));
+		}
+		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1, false)) {
+			return false;
 		}
 
 		if (! as_config_set_user(&config, c->base.user, c->base.password)) {
@@ -297,10 +305,11 @@ asql_init(asql_config* c)
 
 	if (c->base.tls.keyfile && c->base.tls.keyfile_pw) {
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
+			free(c->base.tls.keyfile_pw);
 			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
 
-		if (!tls_read_password(c->base.tls.keyfile_pw, &c->base.tls.keyfile_pw)) {
+		if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0, true)) {
 			return false;
 		}
 	}
@@ -399,83 +408,211 @@ client_log_cb(as_log_level level, const char* func, const char* file,
 	return true;
 }
 
-static bool
-password_env(const char *var, char **ptr)
+static char*
+password_env(const char* opt, const char* var)
 {
-	char *pw = getenv(var);
+	const char* pw = getenv(var);
 
-	if (pw == NULL) {
-		fprintf(stderr, "missing TLS key password environment variable %s\n", var);
-		return false;
+	if (pw == NULL || pw[0] == 0) {
+		fprintf(stderr, "%s: environment variable %s is not set or empty\n",
+				opt, var);
+		return NULL;
 	}
 
-	if (pw[0] == 0) {
-		fprintf(stderr, "empty TLS key password environment variable %s\n", var);
-		return false;
+	char* copy = strdup(pw);
+
+	if (copy == NULL) {
+		fprintf(stderr, "%s: out of memory reading environment variable %s\n",
+				opt, var);
 	}
 
-	free(*ptr);
-	*ptr = strdup(pw);
-	return true;
+	return copy;
 }
 
-static bool
-password_file(const char *path, char **ptr)
+static char*
+password_file(const char* opt, const char* path, size_t max_len, bool first_line)
 {
-	FILE *fh = fopen(path, "r");
+	FILE* fh = fopen(path, "r");
 
 	if (fh == NULL) {
-		fprintf(stderr, "missing TLS key password file %s\n", path);
-		return false;
+		fprintf(stderr, "%s: cannot read file %s: %s\n", opt, path,
+				strerror(errno));
+		return NULL;
 	}
 
-	char pw[5000];
-	char *res = fgets(pw, sizeof(pw), fh);
+	// Room for a trailing \r\n and one byte more, so an over-long value is
+	// caught without reading the rest of the file.
+	size_t cap = max_len + 3;
+	char* pw = malloc(cap + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory reading file %s\n", opt, path);
+		fclose(fh);
+		return NULL;
+	}
+
+	size_t len = 0;
+	int c = EOF;
+
+	while (len < cap && (c = getc(fh)) != EOF && c != 0) {
+		// --tls-keyfile-password has always used only the first line.
+		if (first_line && (c == '\n' || c == '\r')) {
+			break;
+		}
+
+		pw[len++] = (char)c;
+	}
+
+	bool failed = ferror(fh) != 0;
+	int err = errno;
 
 	fclose(fh);
 
-	if (res == NULL) {
-		fprintf(stderr, "error while reading TLS key password file %s\n", path);
-		return false;
+	if (failed) {
+		fprintf(stderr, "%s: cannot read file %s: %s\n", opt, path,
+				strerror(err));
+		free(pw);
+		return NULL;
 	}
 
-	int32_t pw_len;
+	if (c == 0) {
+		fprintf(stderr, "%s: file %s contains a NUL byte\n", opt, path);
+		free(pw);
+		return NULL;
+	}
 
-	for (pw_len = 0; pw[pw_len] != 0; pw_len++) {
-		if (pw[pw_len] == '\n' || pw[pw_len] == '\r') {
-			break;
+	if (len != 0 && pw[len - 1] == '\n') {
+		len--;
+
+		if (len != 0 && pw[len - 1] == '\r') {
+			len--;
 		}
 	}
 
-	if (pw_len == sizeof(pw) - 1) {
-		fprintf(stderr, "TLS key password in file %s too long\n", path);
-		return false;
+	pw[len] = 0;
+
+	if (len == 0) {
+		fprintf(stderr, "%s: %sfile %s is empty\n", opt,
+				first_line && c != EOF ? "first line of " : "", path);
+		free(pw);
+		return NULL;
+	}
+
+	return pw;
+}
+
+static char*
+password_b64(const char* opt, const char* in, const char* what, const char* name)
+{
+	char* pw = malloc(strlen(in) + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory decoding %s%s\n", opt, what, name);
+		return NULL;
+	}
+
+	uint32_t len = 0;
+
+	// Match Go's base64 decoder, which skips CR and LF.
+	for (const char* p = in; *p != 0; p++) {
+		if (*p != '\n' && *p != '\r') {
+			pw[len++] = *p;
+		}
+	}
+
+	uint32_t pw_len;
+
+	if (! cf_b64_validate_and_decode_in_place((uint8_t*)pw, len, &pw_len)) {
+		fprintf(stderr, "%s: invalid base64 in %s%s\n", opt, what, name);
+		free(pw);
+		return NULL;
+	}
+
+	if (memchr(pw, 0, pw_len) != NULL) {
+		fprintf(stderr, "%s: %s%s decodes to a value containing a NUL byte\n",
+				opt, what, name);
+		free(pw);
+		return NULL;
+	}
+
+	if (pw_len != 0 && pw[pw_len - 1] == '\n') {
+		pw_len--;
 	}
 
 	pw[pw_len] = 0;
 
 	if (pw_len == 0) {
-		fprintf(stderr, "empty TLS key password file %s\n", path);
-		return false;
+		fprintf(stderr, "%s: %s%s decodes to an empty value\n", opt, what, name);
+		free(pw);
+		return NULL;
 	}
 
-	free(*ptr);
-	*ptr = strdup(pw);
-	return true;
+	return pw;
+}
+
+static char*
+password_fit(const char* opt, char* pw, size_t max_len, const char* what, const char* name)
+{
+	if (max_len == 0 || strlen(pw) <= max_len) {
+		return pw;
+	}
+
+	fprintf(stderr, "%s: %s%s is longer than %zu bytes\n", opt, what, name, max_len);
+	free(pw);
+	return NULL;
 }
 
 static bool
-tls_read_password(char *value, char **ptr)
+read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 {
+	const char* value = *ptr;
+	char* pw;
+
 	if (strncmp(value, "env:", 4) == 0) {
-		return password_env(value + 4, ptr);
+		const char* var = value + 4;
+
+		if ((pw = password_env(opt, var)) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
+			return false;
+		}
+	}
+	else if (strncmp(value, "env-b64:", 8) == 0) {
+		const char* var = value + 8;
+		char* b64 = password_env(opt, var);
+
+		if (b64 == NULL) {
+			return false;
+		}
+
+		pw = password_b64(opt, b64, "environment variable ", var);
+		free(b64);
+
+		if (pw == NULL ||
+				(pw = password_fit(opt, pw, max_len, "decoded value from environment variable ", var)) == NULL) {
+			return false;
+		}
+	}
+	else if (strncmp(value, "b64:", 4) == 0) {
+		if ((pw = password_b64(opt, value + 4, "b64: value", "")) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "decoded b64: value", "")) == NULL) {
+			return false;
+		}
+	}
+	else if (strncmp(value, "file:", 5) == 0) {
+		const char* path = value + 5;
+		size_t file_max = max_len != 0 ? max_len : PASSWORD_FILE_MAX_LEN;
+
+		if ((pw = password_file(opt, path, file_max, first_line)) == NULL ||
+				(pw = password_fit(opt, pw, file_max, "value from file ", path)) == NULL) {
+			return false;
+		}
+	}
+	else {
+		return true;
 	}
 
-	if (strncmp(value, "file:", 5) == 0) {
-		return password_file(value + 5, ptr);
-	}
-
-	*ptr = value;
+	free(*ptr);
+	*ptr = pw;
 	return true;
 }
 
