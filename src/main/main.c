@@ -419,7 +419,14 @@ password_env(const char* opt, const char* var)
 		return NULL;
 	}
 
-	return strdup(pw);
+	char* copy = strdup(pw);
+
+	if (copy == NULL) {
+		fprintf(stderr, "%s: out of memory reading environment variable %s\n",
+				opt, var);
+	}
+
+	return copy;
 }
 
 static char*
@@ -494,9 +501,15 @@ password_file(const char* opt, const char* path, size_t max_len, bool first_line
 }
 
 static char*
-password_b64(const char* in)
+password_b64(const char* opt, const char* in, const char* what, const char* name)
 {
 	char* pw = malloc(strlen(in) + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory decoding %s%s\n", opt, what, name);
+		return NULL;
+	}
+
 	uint32_t len = 0;
 
 	// Match Go's base64 decoder, which skips CR and LF.
@@ -509,6 +522,14 @@ password_b64(const char* in)
 	uint32_t pw_len;
 
 	if (! cf_b64_validate_and_decode_in_place((uint8_t*)pw, len, &pw_len)) {
+		fprintf(stderr, "%s: invalid base64 in %s%s\n", opt, what, name);
+		free(pw);
+		return NULL;
+	}
+
+	if (memchr(pw, 0, pw_len) != NULL) {
+		fprintf(stderr, "%s: %s%s decodes to a value containing a NUL byte\n",
+				opt, what, name);
 		free(pw);
 		return NULL;
 	}
@@ -518,6 +539,13 @@ password_b64(const char* in)
 	}
 
 	pw[pw_len] = 0;
+
+	if (pw_len == 0) {
+		fprintf(stderr, "%s: %s%s decodes to an empty value\n", opt, what, name);
+		free(pw);
+		return NULL;
+	}
+
 	return pw;
 }
 
@@ -555,39 +583,17 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 			return false;
 		}
 
-		pw = password_b64(b64);
+		pw = password_b64(opt, b64, "environment variable ", var);
 		free(b64);
 
-		if (pw == NULL) {
-			fprintf(stderr, "%s: invalid base64 in environment variable %s\n",
-					opt, var);
-			return false;
-		}
-
-		if (pw[0] == 0) {
-			fprintf(stderr, "%s: environment variable %s decodes to an empty value\n",
-					opt, var);
-			free(pw);
-			return false;
-		}
-
-		if ((pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
+		if (pw == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
 			return false;
 		}
 	}
 	else if (strncmp(value, "b64:", 4) == 0) {
-		if ((pw = password_b64(value + 4)) == NULL) {
-			fprintf(stderr, "%s: invalid base64 in b64: value\n", opt);
-			return false;
-		}
-
-		if (pw[0] == 0) {
-			fprintf(stderr, "%s: b64: value decodes to an empty value\n", opt);
-			free(pw);
-			return false;
-		}
-
-		if ((pw = password_fit(opt, pw, max_len, "decoded b64: value", "")) == NULL) {
+		if ((pw = password_b64(opt, value + 4, "b64: value", "")) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "decoded b64: value", "")) == NULL) {
 			return false;
 		}
 	}
