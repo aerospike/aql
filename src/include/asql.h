@@ -88,7 +88,9 @@ typedef struct asql_base_config {
 
 	char* user;
 	char* password;
+	bool password_from_config;
 	as_config_tls tls;
+	bool tls_keyfile_pw_from_config;
 	int threadpoolsize;
 
 	// Env specific config with set option.

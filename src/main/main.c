@@ -50,7 +50,7 @@
 
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
-#define PASSWORD_FILE_MAX_LEN 4999
+#define TLS_KEYFILE_PASSWORD_MAX_LEN 1024
 
 
 //=========================================================
@@ -79,6 +79,8 @@ static void sig_hdlr(int sig_num);
 static void sig_hdlr_init();
 static bool client_log_cb(as_log_level level, const char* func, const char* file, uint32_t line, const char* fmt, ...);
 
+static bool password_has_source(const char* value);
+static bool password_literal_fits(const char* opt, const char* pw, size_t max_len);
 static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
 static void add_tls_host(asql_config* c, as_config* config);
 
@@ -269,6 +271,10 @@ asql_init(asql_config* c)
 	}
 
 
+	bool pki = c->base.auth_mode && strcasecmp(c->base.auth_mode, "PKI") == 0;
+	const char* password_opt = c->base.password_from_config ?
+			"password in config file" : "--password";
+
 	// User name NULL means attempt to connect to 
 	// insecure cluster.
 	if (c->base.user) {
@@ -276,8 +282,12 @@ asql_init(asql_config* c)
 		if (strcmp(c->base.password, DEFAULTPASSWORD) == 0) {
 			free(c->base.password);
 			c->base.password = strdup(getpass("Enter Password: "));
+
+			if (! pki && ! password_literal_fits(password_opt, c->base.password, AS_PASSWORD_SIZE - 1)) {
+				return false;
+			}
 		}
-		else if (! read_password("--password", &c->base.password, AS_PASSWORD_SIZE - 1, false)) {
+		else if (! pki && ! read_password(password_opt, &c->base.password, AS_PASSWORD_SIZE - 1, false)) {
 			return false;
 		}
 
@@ -285,6 +295,9 @@ asql_init(asql_config* c)
 			printf("Invalid password for user name `%s`\n", c->base.user);
 			return false;
 		}
+	}
+	else if (! pki && password_has_source(c->base.password)) {
+		fprintf(stderr, "Warning: %s: ignored because no user is set\n", password_opt);
 	}
 
 	strcpy(config.lua.user_path, c->base.lua_userpath);
@@ -304,12 +317,15 @@ asql_init(asql_config* c)
 	}
 
 	if (c->base.tls.keyfile && c->base.tls.keyfile_pw) {
+		const char* keyfile_pw_opt = c->base.tls_keyfile_pw_from_config ?
+				"tls-keyfile-password in config file" : "--tls-keyfile-password";
+
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
 			free(c->base.tls.keyfile_pw);
 			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
 		}
 
-		if (! read_password("--tls-keyfile-password", &c->base.tls.keyfile_pw, 0, true)) {
+		if (! read_password(keyfile_pw_opt, &c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN, true)) {
 			return false;
 		}
 	}
@@ -463,8 +479,8 @@ password_file(const char* opt, const char* path, size_t max_len, bool first_line
 		pw[len++] = (char)c;
 	}
 
-	bool failed = ferror(fh) != 0;
 	int err = errno;
+	bool failed = ferror(fh) != 0;
 
 	fclose(fh);
 
@@ -492,7 +508,7 @@ password_file(const char* opt, const char* path, size_t max_len, bool first_line
 	pw[len] = 0;
 
 	if (len == 0) {
-		fprintf(stderr, "%s: %sfile %s is empty\n", opt,
+		fprintf(stderr, "%s: password from %sfile %s is empty\n", opt,
 				first_line && c != EOF ? "first line of " : "", path);
 		free(pw);
 		return NULL;
@@ -542,7 +558,7 @@ password_b64(const char* opt, const char* in, const char* what, const char* name
 	pw[pw_len] = 0;
 
 	if (pw_len == 0) {
-		fprintf(stderr, "%s: %s%s decodes to an empty value\n", opt, what, name);
+		fprintf(stderr, "%s: password from %s%s is empty\n", opt, what, name);
 		free(pw);
 		return NULL;
 	}
@@ -553,13 +569,31 @@ password_b64(const char* opt, const char* in, const char* what, const char* name
 static char*
 password_fit(const char* opt, char* pw, size_t max_len, const char* what, const char* name)
 {
-	if (max_len == 0 || strlen(pw) <= max_len) {
+	if (strlen(pw) <= max_len) {
 		return pw;
 	}
 
 	fprintf(stderr, "%s: %s%s is longer than %zu bytes\n", opt, what, name, max_len);
 	free(pw);
 	return NULL;
+}
+
+static bool
+password_literal_fits(const char* opt, const char* pw, size_t max_len)
+{
+	if (strlen(pw) <= max_len) {
+		return true;
+	}
+
+	fprintf(stderr, "%s: password is longer than %zu bytes\n", opt, max_len);
+	return false;
+}
+
+static bool
+password_has_source(const char* value)
+{
+	return strncmp(value, "env:", 4) == 0 || strncmp(value, "env-b64:", 8) == 0 ||
+			strncmp(value, "b64:", 4) == 0 || strncmp(value, "file:", 5) == 0;
 }
 
 static bool
@@ -571,6 +605,11 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 	if (strncmp(value, "env:", 4) == 0) {
 		const char* var = value + 4;
 
+		if (*var == 0) {
+			fprintf(stderr, "%s: env: requires a variable name\n", opt);
+			return false;
+		}
+
 		if ((pw = password_env(opt, var)) == NULL ||
 				(pw = password_fit(opt, pw, max_len, "value from environment variable ", var)) == NULL) {
 			return false;
@@ -578,6 +617,12 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 	}
 	else if (strncmp(value, "env-b64:", 8) == 0) {
 		const char* var = value + 8;
+
+		if (*var == 0) {
+			fprintf(stderr, "%s: env-b64: requires a variable name\n", opt);
+			return false;
+		}
+
 		char* b64 = password_env(opt, var);
 
 		if (b64 == NULL) {
@@ -600,15 +645,19 @@ read_password(const char* opt, char** ptr, size_t max_len, bool first_line)
 	}
 	else if (strncmp(value, "file:", 5) == 0) {
 		const char* path = value + 5;
-		size_t file_max = max_len != 0 ? max_len : PASSWORD_FILE_MAX_LEN;
 
-		if ((pw = password_file(opt, path, file_max, first_line)) == NULL ||
-				(pw = password_fit(opt, pw, file_max, "value from file ", path)) == NULL) {
+		if (*path == 0) {
+			fprintf(stderr, "%s: file: requires a path\n", opt);
+			return false;
+		}
+
+		if ((pw = password_file(opt, path, max_len, first_line)) == NULL ||
+				(pw = password_fit(opt, pw, max_len, "value from file ", path)) == NULL) {
 			return false;
 		}
 	}
 	else {
-		return true;
+		return password_literal_fits(opt, value, max_len);
 	}
 
 	free(*ptr);

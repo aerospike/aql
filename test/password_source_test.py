@@ -8,6 +8,7 @@ import select
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -24,6 +25,49 @@ OTHER_VAR = "AQL_TEST_OTHER_PW"
 UNREACHABLE = ["-h", "127.0.0.1", "-p", "1", "-c", "show namespaces"]
 CONNECT_FAILED = "Error -10:"
 TLS_KEY_FAILED = "Error -9:"
+PKI_PASSWORD_REJECTED = "Error 64:"
+NO_USER_WARNING = "Warning: {}: ignored because no user is set\n"
+MACOS_GETPASS = "macOS getpass keeps at most 128 typed characters"
+
+PASSWORD_HELP = [
+    "Password used to authenticate with cluster. Default: none",
+    "It can be one of the following:",
+    "1) Environment variable: 'env:<VAR>', used exactly as set",
+    "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
+    "3) Base64 encoded string: 'b64:<BASE64>'",
+    "4) File: 'file:<PATH>', the whole file less one trailing '\\n' or",
+    "   '\\r\\n'. PATH should name a regular file.",
+    "5) String: 'PASSWORD'",
+    "Prefixes are case-sensitive. A base64 value may be line wrapped,",
+    "and one trailing newline is dropped after decoding. A 'b64:' value",
+    "on the command line is as visible as a literal password.",
+    "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
+    "'file:' must be given as 'b64:' or typed at the prompt.",
+    "The password is read only when a user is set and the auth mode is",
+    "not PKI. It must be at most 63 bytes.",
+    "User will be prompted on command line if -P specified and no",
+    "password is given. The typed password is used as is.",
+]
+
+TLS_KEYFILE_PASSWORD_HELP = [
+    "Password to load protected tls-keyfile.",
+    "It can be one of the following:",
+    "1) Environment variable: 'env:<VAR>', used exactly as set",
+    "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
+    "3) Base64 encoded string: 'b64:<BASE64>'",
+    "4) File: 'file:<PATH>', the first line of the file",
+    "5) String: 'PASSWORD'",
+    "Prefixes are case-sensitive. A base64 value may be line wrapped,",
+    "and one trailing newline is dropped after decoding.",
+    "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
+    "'file:' must be given as 'b64:'.",
+    "The password is read only when a key file is set. It must be at",
+    "most 1024 bytes.",
+    "Default: none",
+    "User will be prompted on command line if --tls-keyfile-password",
+    "specified and no password is given. The typed password",
+    "accepts the forms above.",
+]
 
 
 def b64(value: str) -> str:
@@ -86,7 +130,7 @@ def recv_exact(conn, size: int) -> bytes:
     return data
 
 
-def capture_login(args, env=None, config=None) -> bytes:
+def capture_login(args, env=None, config=None, typed=None) -> bytes:
     """Runs aql against a fake server and returns the login request it sends, which holds the credential."""
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
@@ -114,7 +158,11 @@ def capture_login(args, env=None, config=None) -> bytes:
         with mock.patch.dict(os.environ, {}):
             os.environ.pop(VAR, None)
             os.environ.update(env or {})
-            out = utils.run_aql(conf + args + target)
+            if typed is None:
+                out = utils.run_aql(conf + args + target)
+                output = out.stdout.decode() + out.stderr.decode()
+            else:
+                output = run_with_prompt(args, typed, config, target)
     finally:
         # close() alone does not wake accept() on Linux; macOS raises ENOTCONN here.
         try:
@@ -124,7 +172,6 @@ def capture_login(args, env=None, config=None) -> bytes:
         srv.close()
         thread.join(5)
 
-    output = out.stdout.decode() + out.stderr.decode()
     if not packets or len(set(packets)) != 1:
         raise AssertionError("expected one distinct login request, got {}:\n{}".format(len(set(packets)), output))
     return packets[0]
@@ -136,12 +183,14 @@ def literal_login(password: str) -> bytes:
     return capture_login(["-U", "admin", "-P", password])
 
 
-def run_with_prompt(args, typed: str) -> str:
+def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE) -> str:
     aql = os.path.abspath((glob.glob("target/*/bin/aql") + glob.glob("../target/*/bin/aql"))[0])
+    conf = ["--only-config-file", config] if config else ["--no-config-file"]
+    argv = [aql] + conf + args + target
     pid, fd = pty.fork()
 
     if pid == 0:
-        os.execv(aql, [aql, "--no-config-file"] + args + UNREACHABLE)
+        os.execv(aql, argv)
 
     out = b""
     sent = False
@@ -209,26 +258,29 @@ class PasswordSourceTest(unittest.TestCase):
             (opt.strip("-").replace("-", "_") + "_" + case, opt, value, env, expected)
             for opt in ["--password", "--tls-keyfile-password"]
             for case, value, env, expected in [
+                ("env_no_name", "env:", {}, "env: requires a variable name"),
                 ("env_unset", "env:" + VAR, {}, "environment variable {var} is not set or empty"),
                 ("env_empty", "env:" + VAR, {VAR: ""}, "environment variable {var} is not set or empty"),
+                ("env_b64_no_name", "env-b64:", {}, "env-b64: requires a variable name"),
                 ("env_b64_unset", "env-b64:" + VAR, {}, "environment variable {var} is not set or empty"),
                 ("env_b64_invalid", "env-b64:" + VAR, {VAR: "not base64!"}, "invalid base64 in environment variable {var}"),
-                ("env_b64_empty", "env-b64:" + VAR, {VAR: b64("\n")}, "environment variable {var} decodes to an empty value"),
+                ("env_b64_empty", "env-b64:" + VAR, {VAR: b64("\n")}, "password from environment variable {var} is empty"),
                 ("env_b64_nul", "env-b64:" + VAR, {VAR: b64("s3\0cret")}, "environment variable {var} decodes to a value containing a NUL byte"),
                 ("b64_invalid", "b64:" + "c2VjcmV0!", {}, "invalid base64 in b64: value"),
                 ("b64_no_payload", "b64:", {}, "invalid base64 in b64: value"),
-                ("b64_empty", "b64:" + b64("\n"), {}, "b64: value decodes to an empty value"),
+                ("b64_empty", "b64:" + b64("\n"), {}, "password from b64: value is empty"),
                 ("b64_nul", "b64:" + b64("s3\0cret"), {}, "b64: value decodes to a value containing a NUL byte"),
+                ("file_no_path", "file:", {}, "file: requires a path"),
                 ("file_missing", "file:{missing}", {}, "cannot read file {missing}: No such file or directory"),
                 ("file_directory", "file:{subdir}", {}, "cannot read file {subdir}: Is a directory"),
-                ("file_empty", "file:{empty}", {}, "file {empty} is empty"),
+                ("file_empty", "file:{empty}", {}, "password from file {empty} is empty"),
                 ("file_nul", "file:{nul}", {}, "file {nul} contains a NUL byte"),
                 ("file_dev_zero", "file:/dev/zero", {}, "file /dev/zero contains a NUL byte"),
             ]
         ]
         + [
-            ("password_file_newline_only", "--password", "file:{newline}", {}, "file {newline} is empty"),
-            ("tls_keyfile_password_file_newline_only", "--tls-keyfile-password", "file:{newline}", {}, "first line of file {newline} is empty"),
+            ("password_file_newline_only", "--password", "file:{newline}", {}, "password from file {newline} is empty"),
+            ("tls_keyfile_password_file_newline_only", "--tls-keyfile-password", "file:{newline}", {}, "password from first line of file {newline} is empty"),
         ]
     )
     def test_error(self, _, opt, value, env, expected):
@@ -287,7 +339,7 @@ class PasswordSourceTest(unittest.TestCase):
         rc, out = run(self.option_args("--tls-keyfile-password") + ["--tls-keyfile-password=file:" + self.leading_newline])
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("--tls-keyfile-password: first line of file {} is empty\n".format(self.leading_newline), out)
+        self.assertIn("--tls-keyfile-password: password from first line of file {} is empty\n".format(self.leading_newline), out)
         self.assertNotIn(CONNECT_FAILED, out)
 
     def test_tls_keyfile_password_file_stops_at_first_line(self):
@@ -335,41 +387,102 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotIn(SECRET, out)
         self.assertIn(CONNECT_FAILED, out)
 
+    def write_config(self, name, body):
+        path = os.path.join(self.dir, name)
+        with open(path, "w") as f:
+            f.write(body)
+        return path
+
+    def option_config(self, opt):
+        if opt == "--password":
+            return 'user = "admin"\n'
+        return 'tls-enable = true\ntls-keyfile = "{}"\n'.format(self.key)
+
     def test_password_from_config_file(self):
-        config = os.path.join(self.dir, "astools.conf")
-        with open(config, "w") as f:
-            f.write('[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
+        config = self.write_config("astools.conf", '[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
 
         rc, out = run([], {}, config)
         self.assertNotEqual(rc, 0)
-        self.assertIn("--password: environment variable {} is not set or empty\n".format(VAR), out)
+        self.assertIn("password in config file: environment variable {} is not set or empty\n".format(VAR), out)
 
         rc, out = run([], {VAR: SECRET}, config)
-        self.assertNotIn("--password:", out)
+        self.assertNotIn("password in config file:", out)
         self.assertIn(CONNECT_FAILED, out)
 
     def test_command_line_overrides_config_file_before_resolving(self):
-        config = os.path.join(self.dir, "astools-override.conf")
-        with open(config, "w") as f:
-            f.write('[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
+        config = self.write_config("astools-override.conf", '[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(VAR))
 
         rc, out = run(["-P", "literal"], {}, config)
 
+        self.assertNotIn("password in config file:", out)
         self.assertNotIn("--password:", out)
         self.assertIn(CONNECT_FAILED, out)
 
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_config_file_label(self, _, opt):
+        key = opt[2:]
+        config = self.write_config(
+            key + "-label.conf", '[cluster]\n{}{} = "env:{}"\n'.format(self.option_config(opt), key, VAR)
+        )
+
+        rc, out = run([], {}, config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("{} in config file: environment variable {} is not set or empty\n".format(key, VAR), out)
+        self.assertNotIn(opt + ":", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_command_line_label_overrides_config_file(self, _, opt):
+        key = opt[2:]
+        config = self.write_config(
+            key + "-override-label.conf", '[cluster]\n{}{} = "b64:{}"\n'.format(self.option_config(opt), key, b64(SECRET))
+        )
+
+        rc, out = run([opt + "=env:" + OTHER_VAR], {}, config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("{}: environment variable {} is not set or empty\n".format(opt, OTHER_VAR), out)
+        self.assertNotIn("in config file", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_instance_reads_its_cluster_section(self, _, opt):
+        key = opt[2:]
+        config = self.write_config(
+            key + "-instance.conf",
+            '[cluster]\n{opts}{key} = "b64:{good}"\n[cluster_x]\n{opts}{key} = "env:{var}"\n'.format(
+                opts=self.option_config(opt), key=key, good=b64(SECRET), var=VAR
+            ),
+        )
+
+        rc, out = run(["--instance", "x"], {}, config)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("{} in config file: environment variable {} is not set or empty\n".format(key, VAR), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+        rc, out = run([], {}, config)
+        self.assertNotIn("in config file", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
     def test_tls_keyfile_password_from_config_file(self):
-        config = os.path.join(self.dir, "astools-tls.conf")
-        with open(config, "w") as f:
-            f.write(
-                '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\ntls-keyfile-password = "b64:{}"\n'.format(
-                    self.key, b64(SECRET)
-                )
-            )
+        config = self.write_config(
+            "astools-tls.conf",
+            '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\ntls-keyfile-password = "b64:{}"\n'.format(
+                self.key, b64(SECRET)
+            ),
+        )
 
         rc, out = run([], {}, config)
 
         self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_is_not_read_without_key_file(self):
+        rc, out = run(["--tls-keyfile-password", "env:" + VAR])
+
+        self.assertNotIn("--tls-keyfile-password:", out)
         self.assertIn(CONNECT_FAILED, out)
 
     def test_prompted_password_is_literal(self):
@@ -378,6 +491,62 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertIn("Enter Password: ", out)
         self.assertNotIn("--password:", out)
         self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("env", "env:" + VAR),
+            ("env_b64", "env-b64:" + VAR),
+            ("b64", "b64:" + b64(SECRET)),
+            ("file", "file:/nonexistent"),
+        ]
+    )
+    def test_source_without_user_warns(self, _, value):
+        rc, out = run(["-P", value])
+
+        self.assertIn(NO_USER_WARNING.format("--password"), out)
+        self.assertEqual(out.count("--password:"), 1)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("literal", ["-P", SECRET]), ("bare", ["-P"]), ("none", [])])
+    def test_no_source_without_user_does_not_warn(self, _, args):
+        rc, out = run(args)
+
+        self.assertNotIn("ignored", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_config_file_source_without_user_warns(self):
+        config = self.write_config("astools-no-user.conf", '[cluster]\npassword = "env:{}"\n'.format(VAR))
+
+        rc, out = run([], {}, config)
+
+        self.assertIn(NO_USER_WARNING.format("password in config file"), out)
+        self.assertEqual(out.count("password in config file:"), 1)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("upper", "PKI"), ("lower", "pki"), ("mixed", "Pki")])
+    def test_pki_does_not_read_password(self, _, mode):
+        rc, out = run(["-U", "admin", "-P", "env:" + VAR, "--auth", mode])
+
+        self.assertNotIn("--password:", out)
+        self.assertIn(PKI_PASSWORD_REJECTED, out)
+
+    def test_pki_does_not_check_password_length(self):
+        rc, out = run(["-U", "admin", "-P", "p" * 64, "--auth", "PKI"])
+
+        self.assertNotIn("longer than", out)
+        self.assertIn("Invalid password for user name `admin`", out)
+
+    def test_pki_without_user_does_not_warn(self):
+        rc, out = run(["-P", "env:" + VAR, "--auth", "PKI"])
+
+        self.assertNotIn("ignored", out)
+        self.assertNotIn("--password:", out)
+
+    def test_pki_still_prompts(self):
+        out = run_with_prompt(["-U", "admin", "--auth", "PKI", "-P"], "p" * 64)
+
+        self.assertIn("Enter Password: ", out)
+        self.assertNotIn("longer than", out)
 
     @parameterized.expand(
         [
@@ -443,6 +612,12 @@ class PasswordReachesServerTest(unittest.TestCase):
         self.assertNotEqual(via_env, literal_login(SECRET))
         self.assertEqual(via_env, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + OTHER_VAR)], env))
 
+    def test_typed_value_is_sent_as_is(self):
+        typed = capture_login(["-U", "admin", "-P"], {VAR: SECRET}, typed="env:" + VAR)
+
+        self.assertNotEqual(typed, literal_login(SECRET))
+        self.assertEqual(typed, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + VAR)]))
+
     def test_config_file(self):
         config = os.path.join(self.dir, "astools.conf")
         with open(config, "w") as f:
@@ -459,19 +634,26 @@ class PasswordReachesServerTest(unittest.TestCase):
 
 
 class PasswordLengthTest(unittest.TestCase):
-    """A --password value from a source must fit the client's 63-byte limit."""
+    """Every --password value must fit the client's 63-byte limit and every --tls-keyfile-password value 1024 bytes."""
 
     LONGEST = "p" * 63
     TOO_LONG = "p" * 64
-    FORMS = ["env", "env_b64", "env_b64_newline", "b64", "b64_newline", "file", "file_newline", "file_crlf"]
+    KEY_LONGEST = "k" * 1024
+    KEY_TOO_LONG = "k" * 1025
+    FORMS = ["literal", "env", "env_b64", "env_b64_newline", "b64", "b64_newline", "file", "file_newline", "file_crlf"]
 
     @classmethod
     def setUpClass(cls):
         cls.dir = tempfile.mkdtemp()
         cls.addClassCleanup(shutil.rmtree, cls.dir)
+        cls.key = os.path.join(cls.dir, "long-key.pem")
+        make_key(cls.key, cls.KEY_LONGEST)
 
     def source(self, form: str, password: str):
-        """Returns the -P argument, the environment and how the error names the source."""
+        """Returns the option value, the environment and how the error names the source."""
+        if form == "literal":
+            return password, {}, "password"
+
         if form.startswith("file"):
             path = os.path.join(self.dir, "{}-{}".format(form, len(password)))
             ending = {"file": "", "file_newline": "\n", "file_crlf": "\r\n"}[form]
@@ -503,12 +685,27 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertNotIn(self.TOO_LONG, out)
         self.assertNotIn(b64(self.TOO_LONG), out)
 
-    def test_literal_keeps_client_error(self):
-        rc, out = run(["-U", "admin", "-P", self.TOO_LONG])
+    def test_typed_longest_value_is_sent(self):
+        self.assertEqual(capture_login(["-U", "admin", "-P"], typed=self.LONGEST), literal_login(self.LONGEST))
+
+    def test_typed_too_long_value_is_rejected(self):
+        out = run_with_prompt(["-U", "admin", "-P"], self.TOO_LONG)
+
+        self.assertIn("Enter Password: ", out)
+        self.assertIn("--password: password is longer than 63 bytes", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("Invalid password", out)
+
+    def test_config_file_too_long_value_is_rejected(self):
+        config = os.path.join(self.dir, "astools-long.conf")
+        with open(config, "w") as f:
+            f.write('[cluster]\nuser = "admin"\npassword = "{}"\n'.format(self.TOO_LONG))
+
+        rc, out = run([], {}, config)
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("Invalid password for user name `admin`", out)
-        self.assertNotIn("longer than", out)
+        self.assertIn("password in config file: password is longer than 63 bytes\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
 
     def test_endless_file_is_rejected(self):
         with fifo(os.path.join(self.dir, "endless"), b"p" * 4096, endless=True) as path:
@@ -518,35 +715,103 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertIn("--password: value from file {} is longer than 63 bytes\n".format(path), out)
         self.assertNotIn(CONNECT_FAILED, out)
 
-    def test_tls_keyfile_password_from_env_has_no_limit(self):
-        password = "k" * 100
-        key = os.path.join(self.dir, "long-key.pem")
-        make_key(key, password)
-        rc, out = run(["--tls-enable", "--tls-keyfile", key, "--tls-keyfile-password", "env:" + VAR], {VAR: password})
+    def key_args(self, *value):
+        return ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password"] + list(value)
 
+    def assert_key_loaded(self, out):
         self.assertNotIn("longer than", out)
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
 
-    @parameterized.expand([("longest", 4999, False), ("too_long", 5000, True)])
-    def test_tls_keyfile_password_file_limit(self, _, size, rejected):
-        key = os.path.join(self.dir, "key.pem")
-        if not os.path.exists(key):
-            make_key(key, SECRET)
-        path = os.path.join(self.dir, "keyfile-pw-{}".format(size))
-        with open(path, "w") as f:
-            f.write("k" * size + "\nmore\n")
+    def assert_key_password_rejected(self, out, described, label="--tls-keyfile-password", end="\n"):
+        self.assertIn("{}: {} is longer than 1024 bytes{}".format(label, described, end), out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn(self.KEY_TOO_LONG, out)
 
-        rc, out = run(["--tls-enable", "--tls-keyfile", key, "--tls-keyfile-password", "file:" + path])
+    @parameterized.expand([(form,) for form in FORMS])
+    def test_tls_keyfile_longest_value_loads_key(self, form):
+        arg, env, _ = self.source(form, self.KEY_LONGEST)
+        rc, out = run(self.key_args(arg), env)
+
+        self.assert_key_loaded(out)
+
+    @parameterized.expand([(form,) for form in FORMS])
+    def test_tls_keyfile_too_long_value_is_rejected(self, form):
+        arg, env, described = self.source(form, self.KEY_TOO_LONG)
+        rc, out = run(self.key_args(arg), env)
 
         self.assertNotEqual(rc, 0)
-        self.assertNotIn("k" * size, out)
+        self.assert_key_password_rejected(out, described)
+
+    @parameterized.expand([("longest", KEY_LONGEST, False), ("too_long", KEY_TOO_LONG, True)])
+    def test_tls_keyfile_password_file_first_line_limit(self, _, password, rejected):
+        path = os.path.join(self.dir, "keyfile-pw-lines-{}".format(len(password)))
+        with open(path, "w") as f:
+            f.write(password + "\nmore\n")
+
+        rc, out = run(self.key_args("file:" + path))
+
+        self.assertNotEqual(rc, 0)
         if rejected:
-            self.assertIn("--tls-keyfile-password: value from file {} is longer than 4999 bytes\n".format(path), out)
-            self.assertNotIn(TLS_KEY_FAILED, out)
+            self.assert_key_password_rejected(out, "value from file " + path)
         else:
-            self.assertNotIn("longer than", out)
-            self.assertIn(TLS_KEY_FAILED, out)
+            self.assert_key_loaded(out)
+
+    def test_tls_keyfile_password_endless_file_is_rejected(self):
+        with fifo(os.path.join(self.dir, "keyfile-endless"), b"k" * 4096, endless=True) as path:
+            rc, out = run(self.key_args("file:" + path), timeout=10)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--tls-keyfile-password: value from file {} is longer than 1024 bytes\n".format(path), out)
+
+    def test_tls_keyfile_password_config_file_too_long_value_is_rejected(self):
+        config = os.path.join(self.dir, "astools-long-tls.conf")
+        with open(config, "w") as f:
+            f.write(
+                '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\ntls-keyfile-password = "{}"\n'.format(
+                    self.key, self.KEY_TOO_LONG
+                )
+            )
+
+        rc, out = run([], {}, config)
+
+        self.assertNotEqual(rc, 0)
+        self.assert_key_password_rejected(out, "password", "tls-keyfile-password in config file")
+
+    def test_typed_tls_keyfile_source_too_long_is_rejected(self):
+        with mock.patch.dict(os.environ, {VAR: self.KEY_TOO_LONG}):
+            out = run_with_prompt(self.key_args(), "env:" + VAR)
+
+        self.assertIn("Enter TLS-Keyfile Password: ", out)
+        self.assert_key_password_rejected(out, "value from environment variable " + VAR, end="")
+
+    @unittest.skipIf(sys.platform == "darwin", MACOS_GETPASS)
+    def test_typed_tls_keyfile_longest_value_loads_key(self):
+        out = run_with_prompt(self.key_args(), self.KEY_LONGEST)
+
+        self.assertIn("Enter TLS-Keyfile Password: ", out)
+        self.assert_key_loaded(out)
+
+    @unittest.skipIf(sys.platform == "darwin", MACOS_GETPASS)
+    def test_typed_tls_keyfile_too_long_value_is_rejected(self):
+        out = run_with_prompt(self.key_args(), self.KEY_TOO_LONG)
+
+        self.assertIn("Enter TLS-Keyfile Password: ", out)
+        self.assert_key_password_rejected(out, "password", end="")
+
+
+class HelpTest(unittest.TestCase):
+    @parameterized.expand(
+        [
+            ("password", " -P, --password\n", PASSWORD_HELP),
+            ("tls_keyfile_password", " --tls-keyfile-password=TLS_KEYFILE_PASSWORD\n", TLS_KEYFILE_PASSWORD_HELP),
+        ]
+    )
+    def test_help(self, _, header, body):
+        out = utils.run_aql(["--help"]).stdout.decode()
+
+        self.assertIn(header + "".join(" " * 22 + line + "\n" for line in body), out)
 
 
 if __name__ == "__main__":
