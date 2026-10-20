@@ -181,9 +181,23 @@ print_config_file_option()
 	fprintf(stdout, " -p, --port=PORT Server default port. Default: 3000\n");
 	fprintf(stdout, " -U, --user=USER User name used to authenticate with cluster. Default: none\n");
 	fprintf(stdout, " -P, --password\n");
-	fprintf(stdout, "                      Password used to authenticate with cluster. Default: none\n");
-	fprintf(stdout, "                      User will be prompted on command line if -P specified and no\n");
-	fprintf(stdout, "      	               password is given.\n");
+	fprintf(stdout, "                      Password used to authenticate with cluster. Default: none\n"
+                    "                      It can be one of the following:\n"
+                    "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
+                    "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
+                    "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+                    "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
+                    "                         '\\r\\n'. PATH should name a regular file.\n"
+                    "                      5) String: 'PASSWORD'\n"
+                    "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+                    "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
+                    "                      on the command line is as visible as a literal password.\n"
+                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+                    "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+                    "                      The password is read only when a user is set and the auth mode is\n"
+                    "                      not PKI. It must be at most 63 bytes.\n"
+                    "                      User will be prompted on command line if -P specified and no\n"
+                    "                      password is given. The typed password is used as is.\n");
 	fprintf(stdout, " --auth\n");
 	fprintf(stdout, "                      Set authentication mode when user/password is defined. Modes are\n");
 	fprintf(stdout, "                      (INTERNAL, EXTERNAL, EXTERNAL_INSECURE, PKI). Default: INTERNAL\n");
@@ -215,12 +229,21 @@ print_config_file_option()
 	fprintf(stdout, " --tls-keyfile-password=TLS_KEYFILE_PASSWORD\n");
 	fprintf(stdout, "                      Password to load protected tls-keyfile.\n"
                     "                      It can be one of the following:\n"
-                    "                      1) Environment varaible: 'env:<VAR>'\n"
-                    "                      2) File: 'file:<PATH>'\n"
-                    "                      3) String: 'PASSWORD'\n"
+                    "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
+                    "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
+                    "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+                    "                      4) File: 'file:<PATH>', the first line of the file\n"
+                    "                      5) String: 'PASSWORD'\n"
+                    "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+                    "                      and one trailing newline is dropped after decoding.\n"
+                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+                    "                      'file:' must be given as 'b64:'.\n"
+                    "                      The password is read only when a key file is set. It must be at\n"
+                    "                      most 1024 bytes.\n"
                     "                      Default: none\n"
                     "                      User will be prompted on command line if --tls-keyfile-password\n"
-                    "                      specified and no password is given.\n");
+                    "                      specified and no password is given. The typed password\n"
+                    "                      accepts the forms above.\n");
 	fprintf(stdout, " --tls-certfile=TLS_CERTFILE <path>\n");
 	fprintf(stdout, "                      Path to the chain file for mutual authentication (if\n"
                     "                      Aerospike Cluster is supporting it).\n");
@@ -439,6 +462,8 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 				break;
 
 			case 'P':
+				base->password_from_config = false;
+
 				if (optarg) {
 					base->password =  safe_strdup(base->password, optarg);
 				} else {
@@ -500,6 +525,8 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 				break;
 
 			case 1012:
+				base->tls_keyfile_pw_from_config = false;
+
 				if (optarg) {
 					base->tls.keyfile_pw = safe_strdup(base->tls.keyfile_pw, optarg);;
 				} else {
@@ -508,7 +535,7 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
                                                 base->tls.keyfile_pw = safe_strdup(base->tls.keyfile_pw, argv[optind++]);
                                         } else {
 						// no input value, need to prompt
-                                                base->tls.keyfile_pw = strdup(DEFAULTPASSWORD);
+                                                base->tls.keyfile_pw = safe_strdup(base->tls.keyfile_pw, DEFAULTPASSWORD);
                                         }
 
 				}
@@ -1114,6 +1141,7 @@ config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char
 
 		} else if (! strcasecmp("password", name)) {
 			status = config_str(curtab, name, (void*)&c->base.password);
+			c->base.password_from_config = true;
 
 		} else if (! strcasecmp("auth", name)) {
 			status = config_str(curtab, name, &c->base.auth_mode);
@@ -1141,6 +1169,7 @@ config_cluster(toml_table_t* conftab, asql_config* c, const char* instance, char
 
 		} else if (! strcasecmp("tls-keyfile-password", name)) {
 			status = config_str(curtab, name, (void*)&c->base.tls.keyfile_pw);
+			c->base.tls_keyfile_pw_from_config = true;
 
 		} else if (! strcasecmp("tls-cafile", name)) {
 			status = config_str(curtab, name, &c->base.tls.cafile);
