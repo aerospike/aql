@@ -536,9 +536,9 @@ password_b64(const char* opt, const char* in, const char* what, const char* name
 		}
 	}
 
-	uint32_t pw_len;
+	uint32_t pw_len = 0;
 
-	if (! cf_b64_validate_and_decode_in_place((uint8_t*)pw, len, &pw_len)) {
+	if (len != 0 && ! cf_b64_validate_and_decode_in_place((uint8_t*)pw, len, &pw_len)) {
 		fprintf(stderr, "%s: invalid base64 in %s%s\n", opt, what, name);
 		free(pw);
 		return NULL;

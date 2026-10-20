@@ -263,11 +263,14 @@ class PasswordSourceTest(unittest.TestCase):
                 ("env_empty", "env:" + VAR, {VAR: ""}, "environment variable {var} is not set or empty"),
                 ("env_b64_no_name", "env-b64:", {}, "env-b64: requires a variable name"),
                 ("env_b64_unset", "env-b64:" + VAR, {}, "environment variable {var} is not set or empty"),
+                ("env_b64_empty_var", "env-b64:" + VAR, {VAR: ""}, "environment variable {var} is not set or empty"),
                 ("env_b64_invalid", "env-b64:" + VAR, {VAR: "not base64!"}, "invalid base64 in environment variable {var}"),
                 ("env_b64_empty", "env-b64:" + VAR, {VAR: b64("\n")}, "password from environment variable {var} is empty"),
+                ("env_b64_only_line_breaks", "env-b64:" + VAR, {VAR: "\r\n\n"}, "password from environment variable {var} is empty"),
                 ("env_b64_nul", "env-b64:" + VAR, {VAR: b64("s3\0cret")}, "environment variable {var} decodes to a value containing a NUL byte"),
                 ("b64_invalid", "b64:" + "c2VjcmV0!", {}, "invalid base64 in b64: value"),
-                ("b64_no_payload", "b64:", {}, "invalid base64 in b64: value"),
+                ("b64_no_payload", "b64:", {}, "password from b64: value is empty"),
+                ("b64_only_line_breaks", "b64:\r\n\n", {}, "password from b64: value is empty"),
                 ("b64_empty", "b64:" + b64("\n"), {}, "password from b64: value is empty"),
                 ("b64_nul", "b64:" + b64("s3\0cret"), {}, "b64: value decodes to a value containing a NUL byte"),
                 ("file_no_path", "file:", {}, "file: requires a path"),
@@ -298,7 +301,7 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn(opt + ": " + expected.format(**names) + "\n", out)
         self.assertNotIn(CONNECT_FAILED, out)
-        if value.startswith("b64:") and len(value) > 4:
+        if value.startswith("b64:") and value[4:].strip():
             self.assertNotIn(value[4:], out)
 
     @parameterized.expand(
