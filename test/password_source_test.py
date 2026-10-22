@@ -46,7 +46,8 @@ PASSWORD_HELP = [
     "The password is read only when a user is set and the auth mode is",
     "not PKI. It must be at most 63 bytes.",
     "User will be prompted on command line if -P specified and no",
-    "password is given. The typed password is used as is.",
+    "password is given. The typed password is used as is. A password",
+    "piped on stdin has surrounding whitespace trimmed.",
 ]
 
 TLS_KEYFILE_PASSWORD_HELP = [
@@ -61,6 +62,7 @@ TLS_KEYFILE_PASSWORD_HELP = [
     "and one trailing newline is dropped after decoding.",
     "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
     "'file:' must be given as 'b64:'.",
+    "Surrounding whitespace is trimmed before the form is read.",
     "The password is read only when a key file is set. It must be at",
     "most 1024 bytes.",
     "Default: none",
@@ -86,12 +88,12 @@ def make_key(path: str, password: str):
     )
 
 
-def run(args, env=None, config=None, timeout=None):
+def run(args, env=None, config=None, timeout=None, piped=None):
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     with mock.patch.dict(os.environ, {}):
         os.environ.pop(VAR, None)
         os.environ.update(env or {})
-        out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout)
+        out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout, piped=piped)
     return out.returncode, out.stdout.decode() + out.stderr.decode()
 
 
@@ -130,7 +132,7 @@ def recv_exact(conn, size: int) -> bytes:
     return data
 
 
-def capture_login(args, env=None, config=None, typed=None) -> bytes:
+def capture_login(args, env=None, config=None, typed=None, piped=None, stdin=None) -> bytes:
     """Runs aql against a fake server and returns the login request it sends, which holds the credential."""
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
@@ -159,10 +161,10 @@ def capture_login(args, env=None, config=None, typed=None) -> bytes:
             os.environ.pop(VAR, None)
             os.environ.update(env or {})
             if typed is None:
-                out = utils.run_aql(conf + args + target)
+                out = utils.run_aql(conf + args + target, piped=piped)
                 output = out.stdout.decode() + out.stderr.decode()
             else:
-                output = run_with_prompt(args, typed, config, target)
+                output = run_with_prompt(args, typed, config, target, stdin)
     finally:
         # close() alone does not wake accept() on Linux; macOS raises ENOTCONN here.
         try:
@@ -183,13 +185,16 @@ def literal_login(password: str) -> bytes:
     return capture_login(["-U", "admin", "-P", password])
 
 
-def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE) -> str:
+def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE, stdin=None) -> str:
+    """Runs aql with a pty as its controlling terminal and, if stdin is a file descriptor, that as its stdin."""
     aql = os.path.abspath((glob.glob("target/*/bin/aql") + glob.glob("../target/*/bin/aql"))[0])
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     argv = [aql] + conf + args + target
     pid, fd = pty.fork()
 
     if pid == 0:
+        if stdin is not None:
+            os.dup2(stdin, 0)
         os.execv(aql, argv)
 
     out = b""
@@ -571,6 +576,47 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
 
+    @parameterized.expand(
+        [
+            (source + "_" + case, source, value)
+            for source in ["command_line", "config_file", "prompt"]
+            for case, value in [("env", " env:" + VAR + " "), ("literal", "  " + SECRET + " \t")]
+        ]
+    )
+    def test_padded_tls_keyfile_password_is_trimmed(self, name, source, value):
+        opt = "--tls-keyfile-password"
+
+        if source == "prompt":
+            with mock.patch.dict(os.environ, {VAR: SECRET}):
+                out = run_with_prompt(self.option_args(opt) + [opt], value)
+        elif source == "config_file":
+            config = self.write_config(
+                name + ".conf",
+                '[cluster]\n{}tls-keyfile-password = "{}"\n'.format(self.option_config(opt), value.replace("\t", "\\t")),
+            )
+            rc, out = run([], {VAR: SECRET}, config)
+        else:
+            rc, out = run(self.option_args(opt) + [opt + "=" + value], {VAR: SECRET})
+
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_leading_nbsp_is_literal(self):
+        opt = "--tls-keyfile-password"
+        rc, out = run(self.option_args(opt) + [opt + "=\u00a0env:" + VAR], {VAR: SECRET})
+
+        self.assertNotIn(opt + ":", out)
+        self.assertIn(TLS_KEY_FAILED, out)
+
+    def test_piped_tls_keyfile_password_is_trimmed_and_resolved(self):
+        opt = "--tls-keyfile-password"
+        rc, out = run(self.option_args(opt) + [opt], {VAR: SECRET}, piped=" env:" + VAR + " \n")
+
+        self.assertNotIn("Enter TLS-Keyfile Password", out)
+        self.assertNotIn(opt + ":", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
 
 class PasswordReachesServerTest(unittest.TestCase):
     """The resolved --password is what the client sends at login, not just something that resolves."""
@@ -620,6 +666,34 @@ class PasswordReachesServerTest(unittest.TestCase):
 
         self.assertNotEqual(typed, literal_login(SECRET))
         self.assertEqual(typed, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + VAR)]))
+
+    def test_typed_value_is_not_trimmed(self):
+        padded = " " + SECRET + " "
+
+        self.assertEqual(capture_login(["-U", "admin", "-P"], typed=padded), literal_login(padded))
+
+    def test_piped_value_is_trimmed(self):
+        self.assertEqual(capture_login(["-U", "admin", "-P"], piped=" " + SECRET + " \r\n"), literal_login(SECRET))
+
+    def test_piped_value_is_sent_as_is(self):
+        piped = capture_login(["-U", "admin", "-P"], {VAR: SECRET}, piped="env:" + VAR + "\n")
+
+        self.assertNotEqual(piped, literal_login(SECRET))
+        self.assertEqual(piped, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + VAR)]))
+
+    def test_terminal_is_used_before_piped_stdin(self):
+        commands = b"show sets\nshow bins\n"
+        r, w = os.pipe()
+        os.write(w, commands)
+        os.close(w)
+        try:
+            typed = capture_login(["-U", "admin", "-P"], typed=SECRET, stdin=r)
+            left = os.read(r, 1024)
+        finally:
+            os.close(r)
+
+        self.assertEqual(typed, literal_login(SECRET))
+        self.assertEqual(left, commands)
 
     def test_config_file(self):
         config = os.path.join(self.dir, "astools.conf")
@@ -699,6 +773,14 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertNotIn(CONNECT_FAILED, out)
         self.assertNotIn("Invalid password", out)
 
+    def test_piped_cut_off_value_is_rejected(self):
+        rc, out = run(["-U", "admin", "-P"], piped=" " * 10 + "x" * 100)
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("Enter Password", out)
+        self.assertIn("--password: password is longer than 63 bytes\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
     def test_config_file_too_long_value_is_rejected(self):
         config = os.path.join(self.dir, "astools-long.conf")
         with open(config, "w") as f:
@@ -767,6 +849,13 @@ class PasswordLengthTest(unittest.TestCase):
 
         self.assertNotEqual(rc, 0)
         self.assertIn("--tls-keyfile-password: value from file {} is longer than 1024 bytes\n".format(path), out)
+
+    def test_tls_keyfile_password_piped_cut_off_value_is_rejected(self):
+        rc, out = run(self.key_args(), piped=" " * 10 + "x" * 2000)
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("Enter TLS-Keyfile Password", out)
+        self.assert_key_password_rejected(out, "password")
 
     def test_tls_keyfile_password_config_file_too_long_value_is_rejected(self):
         config = os.path.join(self.dir, "astools-long-tls.conf")

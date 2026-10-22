@@ -197,7 +197,8 @@ print_config_file_option()
                     "                      The password is read only when a user is set and the auth mode is\n"
                     "                      not PKI. It must be at most 63 bytes.\n"
                     "                      User will be prompted on command line if -P specified and no\n"
-                    "                      password is given. The typed password is used as is.\n");
+                    "                      password is given. The typed password is used as is. A password\n"
+                    "                      piped on stdin has surrounding whitespace trimmed.\n");
 	fprintf(stdout, " --auth\n");
 	fprintf(stdout, "                      Set authentication mode when user/password is defined. Modes are\n");
 	fprintf(stdout, "                      (INTERNAL, EXTERNAL, EXTERNAL_INSECURE, PKI). Default: INTERNAL\n");
@@ -238,6 +239,7 @@ print_config_file_option()
                     "                      and one trailing newline is dropped after decoding.\n"
                     "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
                     "                      'file:' must be given as 'b64:'.\n"
+                    "                      Surrounding whitespace is trimmed before the form is read.\n"
                     "                      The password is read only when a key file is set. It must be at\n"
                     "                      most 1024 bytes.\n"
                     "                      Default: none\n"

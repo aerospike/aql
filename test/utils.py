@@ -189,7 +189,7 @@ def check_for_valgrind() -> bool:
     return os.path.isfile("valgrind")
 
 
-def run_aql(args=None, timeout=None) -> subprocess.CompletedProcess:
+def run_aql(args=None, timeout=None, piped=None) -> subprocess.CompletedProcess:
     cmds = [
         "../target/Linux-x86_64/bin/aql",
         "../target/Darwin-x86_64/bin/aql",
@@ -202,7 +202,11 @@ def run_aql(args=None, timeout=None) -> subprocess.CompletedProcess:
     cmd = [cmd for cmd in cmds if os.path.isfile(cmd)]
     args = [] if args is None else args
     cmd.extend(args)
-    return subprocess.run(cmd, capture_output=True, timeout=timeout)
+    if piped is None:
+        return subprocess.run(cmd, capture_output=True, timeout=timeout)
+
+    # A new session has no controlling terminal, so aql reads the piped stdin.
+    return subprocess.run(cmd, capture_output=True, timeout=timeout, input=piped.encode(), start_new_session=True)
 
 
 def create_client(seed: tuple[str, int] = None):
