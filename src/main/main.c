@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -51,6 +52,7 @@
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
 #define TLS_KEYFILE_PASSWORD_MAX_LEN 1024
+#define PASSWORD_WHITESPACE " \t\n\v\f\r"
 
 
 //=========================================================
@@ -81,6 +83,8 @@ static bool client_log_cb(as_log_level level, const char* func, const char* file
 
 static bool password_has_source(const char* value);
 static bool password_literal_fits(const char* opt, const char* pw, size_t max_len);
+static char* password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off);
+static void password_trim(char* pw);
 static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
 static void add_tls_host(asql_config* c, as_config* config);
 
@@ -281,9 +285,10 @@ asql_init(asql_config* c)
 		// Prompt after first screen
 		if (strcmp(c->base.password, DEFAULTPASSWORD) == 0) {
 			free(c->base.password);
-			c->base.password = strdup(getpass("Enter Password: "));
+			c->base.password = password_prompt(password_opt, "Enter Password: ", AS_PASSWORD_SIZE - 1, NULL);
 
-			if (! pki && ! password_literal_fits(password_opt, c->base.password, AS_PASSWORD_SIZE - 1)) {
+			if (c->base.password == NULL ||
+					(! pki && ! password_literal_fits(password_opt, c->base.password, AS_PASSWORD_SIZE - 1))) {
 				return false;
 			}
 		}
@@ -321,9 +326,19 @@ asql_init(asql_config* c)
 				"tls-keyfile-password in config file" : "--tls-keyfile-password";
 
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
+			bool cut_off;
+
 			free(c->base.tls.keyfile_pw);
-			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
+			c->base.tls.keyfile_pw = password_prompt(keyfile_pw_opt, "Enter TLS-Keyfile Password: ",
+					TLS_KEYFILE_PASSWORD_MAX_LEN, &cut_off);
+
+			if (c->base.tls.keyfile_pw == NULL || (cut_off && ! password_literal_fits(keyfile_pw_opt,
+					c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN))) {
+				return false;
+			}
 		}
+
+		password_trim(c->base.tls.keyfile_pw);
 
 		if (! read_password(keyfile_pw_opt, &c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN, true)) {
 			return false;
@@ -594,6 +609,71 @@ password_has_source(const char* value)
 {
 	return strncmp(value, "env:", 4) == 0 || strncmp(value, "env-b64:", 8) == 0 ||
 			strncmp(value, "b64:", 4) == 0 || strncmp(value, "file:", 5) == 0;
+}
+
+static void
+password_trim(char* pw)
+{
+	size_t start = strspn(pw, PASSWORD_WHITESPACE);
+	size_t len = strlen(pw + start);
+
+	while (len != 0 && strchr(PASSWORD_WHITESPACE, pw[start + len - 1]) != NULL) {
+		len--;
+	}
+
+	memmove(pw, pw + start, len);
+	pw[len] = 0;
+}
+
+static char*
+password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off)
+{
+	if (cut_off != NULL) {
+		*cut_off = false;
+	}
+
+	// getpass reads stdin only when there is no terminal to open.
+	int tty = open("/dev/tty", O_RDWR);
+
+	if (tty >= 0) {
+		close(tty);
+		return strdup(getpass(prompt));
+	}
+
+	size_t cap = max_len + 3;
+	char* pw = malloc(cap + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory reading stdin\n", opt);
+		return NULL;
+	}
+
+	size_t len = 0;
+	char c;
+
+	// One byte at a time, so the rest of stdin is left for the aql prompt.
+	while (len < cap && read(STDIN_FILENO, &c, 1) == 1) {
+		pw[len++] = c;
+
+		if (c == '\n') {
+			break;
+		}
+	}
+
+	pw[len] = 0;
+
+	bool cut = len == cap && pw[len - 1] != '\n';
+
+	// A cut-off line stays as read so the length check rejects it.
+	if (! cut) {
+		password_trim(pw);
+	}
+
+	if (cut_off != NULL) {
+		*cut_off = cut;
+	}
+
+	return pw;
 }
 
 static bool
