@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <readline/readline.h>
@@ -61,6 +62,7 @@
 
 char* g_prompt = "aql> ";
 static aerospike s_aerospike;
+static volatile sig_atomic_t s_password_signal = 0;
 bool g_inprogress = false;
 asql_config* g_config = NULL;
 aerospike* g_aerospike = &s_aerospike;
@@ -83,6 +85,8 @@ static bool client_log_cb(as_log_level level, const char* func, const char* file
 
 static bool password_has_source(const char* value);
 static bool password_literal_fits(const char* opt, const char* pw, size_t max_len);
+static void password_on_signal(int sig);
+static bool password_read_byte(char* c);
 static char* password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off);
 static void password_trim(char* pw);
 static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
@@ -625,6 +629,30 @@ password_trim(char* pw)
 	pw[len] = 0;
 }
 
+static void
+password_on_signal(int sig)
+{
+	s_password_signal = sig;
+}
+
+static bool
+password_read_byte(char* c)
+{
+	while (true) {
+		ssize_t n = read(STDIN_FILENO, c, 1);
+
+		if (n == 1) {
+			return true;
+		}
+
+		if (n < 0 && errno == EINTR && s_password_signal == 0) {
+			continue;
+		}
+
+		return false;
+	}
+}
+
 static char*
 password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off)
 {
@@ -632,7 +660,6 @@ password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_o
 		*cut_off = false;
 	}
 
-	// getpass reads stdin only when there is no terminal to open.
 	int tty = open("/dev/tty", O_RDWR);
 
 	if (tty >= 0) {
@@ -648,11 +675,37 @@ password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_o
 		return NULL;
 	}
 
+	static const int signals[] = { SIGHUP, SIGINT, SIGQUIT, SIGTERM };
+	size_t n_signals = sizeof(signals) / sizeof(signals[0]);
+	struct sigaction saved_sa[sizeof(signals) / sizeof(signals[0])];
+	struct termios saved_term;
+	bool typed = isatty(STDIN_FILENO) != 0;
+	bool guarded = typed && tcgetattr(STDIN_FILENO, &saved_term) == 0;
+	bool echo_off = false;
+
+	fputs(prompt, stderr);
+	s_password_signal = 0;
+
+	// While echo is off, a signal restores the terminal before it takes effect.
+	if (guarded) {
+		struct sigaction sa = { .sa_handler = password_on_signal };
+		struct termios term = saved_term;
+
+		sigemptyset(&sa.sa_mask);
+
+		for (size_t i = 0; i < n_signals; i++) {
+			sigaction(signals[i], &sa, &saved_sa[i]);
+		}
+
+		term.c_lflag &= ~(tcflag_t)(ECHO | ECHONL);
+		echo_off = tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) == 0;
+	}
+
 	size_t len = 0;
 	char c;
 
 	// One byte at a time, so the rest of stdin is left for the aql prompt.
-	while (len < cap && read(STDIN_FILENO, &c, 1) == 1) {
+	while (len < cap && password_read_byte(&c)) {
 		pw[len++] = c;
 
 		if (c == '\n') {
@@ -660,13 +713,42 @@ password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_o
 		}
 	}
 
+	// A line that fills the bound is complete only if the input ends or the line does.
+	bool cut = len == cap && pw[len - 1] != '\n' && password_read_byte(&c) && c != '\n';
+
 	pw[len] = 0;
 
-	bool cut = len == cap && pw[len - 1] != '\n';
+	if (echo_off) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved_term);
+		fputc('\n', stderr);
+	}
+
+	if (guarded) {
+		for (size_t i = 0; i < n_signals; i++) {
+			sigaction(signals[i], &saved_sa[i], NULL);
+		}
+
+		if (s_password_signal != 0) {
+			raise(s_password_signal);
+			free(pw);
+			return NULL;
+		}
+	}
+
+	if (memchr(pw, 0, len) != NULL) {
+		fprintf(stderr, "%s: password from stdin contains a NUL byte\n", opt);
+		free(pw);
+		return NULL;
+	}
 
 	// A cut-off line stays as read so the length check rejects it.
 	if (! cut) {
-		password_trim(pw);
+		if (! typed) {
+			password_trim(pw);
+		}
+		else if (len != 0 && pw[len - 1] == '\n') {
+			pw[len - 1] = 0;
+		}
 	}
 
 	if (cut_off != NULL) {
