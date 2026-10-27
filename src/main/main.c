@@ -694,7 +694,11 @@ password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_o
 		sigemptyset(&sa.sa_mask);
 
 		for (size_t i = 0; i < n_signals; i++) {
-			sigaction(signals[i], &sa, &saved_sa[i]);
+			sigaction(signals[i], NULL, &saved_sa[i]);
+
+			if (saved_sa[i].sa_handler != SIG_IGN) {
+				sigaction(signals[i], &sa, NULL);
+			}
 		}
 
 		term.c_lflag &= ~(tcflag_t)(ECHO | ECHONL);

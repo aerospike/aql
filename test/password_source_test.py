@@ -138,7 +138,9 @@ def recv_exact(conn, size: int) -> bytes:
     return data
 
 
-def capture_login(args, env=None, config=None, typed=None, piped=None, stdin=None, terminal_stdin=False) -> bytes:
+def capture_login(
+    args, env=None, config=None, typed=None, piped=None, stdin=None, terminal_stdin=False, **terminal_options
+) -> bytes:
     """Runs aql against a fake server and returns the login request it sends, which holds the credential."""
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
@@ -170,7 +172,7 @@ def capture_login(args, env=None, config=None, typed=None, piped=None, stdin=Non
                 out = utils.run_aql(conf + args + target, piped=piped, stdin=stdin)
                 output = out.stdout.decode() + out.stderr.decode()
             elif terminal_stdin:
-                output = run_with_terminal_stdin(args, typed, config, target)[0]
+                output = run_with_terminal_stdin(args, typed, config, target, **terminal_options)[0]
             else:
                 output = run_with_prompt(args, typed, config, target, stdin)
     finally:
@@ -228,10 +230,24 @@ def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE, stdin=Non
     return out.decode()
 
 
-def run_with_terminal_stdin(args, typed: str, config=None, target=UNREACHABLE, interrupt=False):
+def ignore_signals(signals):
+    for sig in signals:
+        signal.signal(sig, signal.SIG_IGN)
+
+
+def run_with_terminal_stdin(
+    args,
+    typed: str,
+    config=None,
+    target=UNREACHABLE,
+    interrupt=False,
+    signum=signal.SIGINT,
+    ignore=(),
+    type_after_interrupt=False,
+):
     """Runs aql in a new session with a pty as stdin but not as its controlling terminal, as under setsid
-    or su -c, types into it or interrupts it, and returns the output, what the terminal echoed and whether
-    echo is on after."""
+    or su -c, types into it or interrupts it with signum, and returns the output, what the terminal echoed
+    and whether echo is on after. aql starts with the signals in ignore ignored, as under nohup."""
     aql = os.path.abspath((glob.glob("target/*/bin/aql") + glob.glob("../target/*/bin/aql"))[0])
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     master, slave = pty.openpty()
@@ -241,6 +257,7 @@ def run_with_terminal_stdin(args, typed: str, config=None, target=UNREACHABLE, i
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
+        preexec_fn=functools.partial(ignore_signals, ignore) if ignore else None,
     )
     echoed = b""
 
@@ -250,8 +267,10 @@ def run_with_terminal_stdin(args, typed: str, config=None, target=UNREACHABLE, i
         while termios.tcgetattr(slave)[3] & termios.ECHO and time.time() < deadline:
             time.sleep(0.05)
         if interrupt:
-            proc.send_signal(signal.SIGINT)
-        else:
+            proc.send_signal(signum)
+            if type_after_interrupt:
+                time.sleep(0.5)
+        if not interrupt or type_after_interrupt:
             os.write(master, typed.encode() + b"\n")
 
         while select.select([master], [], [], 1)[0]:
@@ -721,6 +740,24 @@ class PasswordSourceTest(unittest.TestCase):
 
         self.assertTrue(echo_after)
 
+    @parameterized.expand(
+        [
+            (opt.strip("-").replace("-", "_") + "_" + sig.name.lower(), opt, sig)
+            for opt in ["--password", "--tls-keyfile-password"]
+            for sig in [signal.SIGHUP, signal.SIGQUIT]
+        ]
+    )
+    def test_terminal_stdin_without_a_controlling_terminal_keeps_reading_on_an_ignored_signal(self, _, opt, sig):
+        """A signal ignored on entry, as under nohup, stays ignored and does not end the read. aql sets its own
+        SIGINT and SIGTERM handlers at startup, so only SIGHUP and SIGQUIT can still be ignored at the prompt."""
+        out, echoed, echo_after = run_with_terminal_stdin(
+            self.prompt_args(opt), SECRET, interrupt=True, signum=sig, ignore=(sig,), type_after_interrupt=True
+        )
+
+        self.assertIn(CONNECT_FAILED, out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertNotIn(SECRET, echoed)
+
 
 class PasswordReachesServerTest(unittest.TestCase):
     """The resolved --password is what the client sends at login, not just something that resolves."""
@@ -819,6 +856,19 @@ class PasswordReachesServerTest(unittest.TestCase):
         self.assertEqual(
             capture_login(["-U", "admin", "-P"], typed=padded, terminal_stdin=True), literal_login(padded)
         )
+
+    def test_terminal_stdin_without_a_controlling_terminal_ignored_signal_keeps_typed_value(self):
+        typed = capture_login(
+            ["-U", "admin", "-P"],
+            typed=SECRET,
+            terminal_stdin=True,
+            interrupt=True,
+            signum=signal.SIGHUP,
+            ignore=(signal.SIGHUP,),
+            type_after_interrupt=True,
+        )
+
+        self.assertEqual(typed, literal_login(SECRET))
 
     def test_piped_value_is_sent_as_is(self):
         piped = capture_login(["-U", "admin", "-P"], {VAR: SECRET}, piped="env:" + VAR + "\n")
