@@ -6,11 +6,14 @@ import os
 import pty
 import select
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import termios
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -46,7 +49,9 @@ PASSWORD_HELP = [
     "The password is read only when a user is set and the auth mode is",
     "not PKI. It must be at most 63 bytes.",
     "User will be prompted on command line if -P specified and no",
-    "password is given. The typed password is used as is.",
+    "password is given. The typed password is used as is. With no",
+    "terminal, the password is read from one line of stdin and has",
+    "surrounding whitespace trimmed.",
 ]
 
 TLS_KEYFILE_PASSWORD_HELP = [
@@ -61,12 +66,15 @@ TLS_KEYFILE_PASSWORD_HELP = [
     "and one trailing newline is dropped after decoding.",
     "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
     "'file:' must be given as 'b64:'.",
+    "Surrounding whitespace is trimmed before the form is read. A",
+    "password with surrounding whitespace must be given as 'b64:'.",
     "The password is read only when a key file is set. It must be at",
     "most 1024 bytes.",
     "Default: none",
     "User will be prompted on command line if --tls-keyfile-password",
     "specified and no password is given. The typed password",
-    "accepts the forms above.",
+    "accepts the forms above. With no terminal, the password is read",
+    "from one line of stdin.",
 ]
 
 
@@ -86,12 +94,12 @@ def make_key(path: str, password: str):
     )
 
 
-def run(args, env=None, config=None, timeout=None):
+def run(args, env=None, config=None, timeout=None, piped=None):
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     with mock.patch.dict(os.environ, {}):
         os.environ.pop(VAR, None)
         os.environ.update(env or {})
-        out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout)
+        out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout, piped=piped)
     return out.returncode, out.stdout.decode() + out.stderr.decode()
 
 
@@ -130,7 +138,9 @@ def recv_exact(conn, size: int) -> bytes:
     return data
 
 
-def capture_login(args, env=None, config=None, typed=None) -> bytes:
+def capture_login(
+    args, env=None, config=None, typed=None, piped=None, stdin=None, terminal_stdin=False, **terminal_options
+) -> bytes:
     """Runs aql against a fake server and returns the login request it sends, which holds the credential."""
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
@@ -159,10 +169,12 @@ def capture_login(args, env=None, config=None, typed=None) -> bytes:
             os.environ.pop(VAR, None)
             os.environ.update(env or {})
             if typed is None:
-                out = utils.run_aql(conf + args + target)
+                out = utils.run_aql(conf + args + target, piped=piped, stdin=stdin)
                 output = out.stdout.decode() + out.stderr.decode()
+            elif terminal_stdin:
+                output = run_with_terminal_stdin(args, typed, config, target, **terminal_options)[0]
             else:
-                output = run_with_prompt(args, typed, config, target)
+                output = run_with_prompt(args, typed, config, target, stdin)
     finally:
         # close() alone does not wake accept() on Linux; macOS raises ENOTCONN here.
         try:
@@ -183,13 +195,16 @@ def literal_login(password: str) -> bytes:
     return capture_login(["-U", "admin", "-P", password])
 
 
-def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE) -> str:
+def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE, stdin=None) -> str:
+    """Runs aql with a pty as its controlling terminal and, if stdin is a file descriptor, that as its stdin."""
     aql = os.path.abspath((glob.glob("target/*/bin/aql") + glob.glob("../target/*/bin/aql"))[0])
     conf = ["--only-config-file", config] if config else ["--no-config-file"]
     argv = [aql] + conf + args + target
     pid, fd = pty.fork()
 
     if pid == 0:
+        if stdin is not None:
+            os.dup2(stdin, 0)
         os.execv(aql, argv)
 
     out = b""
@@ -213,6 +228,68 @@ def run_with_prompt(args, typed: str, config=None, target=UNREACHABLE) -> str:
     os.close(fd)
     os.waitpid(pid, 0)
     return out.decode()
+
+
+def ignore_signals(signals):
+    for sig in signals:
+        signal.signal(sig, signal.SIG_IGN)
+
+
+def run_with_terminal_stdin(
+    args,
+    typed: str,
+    config=None,
+    target=UNREACHABLE,
+    interrupt=False,
+    signum=signal.SIGINT,
+    ignore=(),
+    type_after_interrupt=False,
+):
+    """Runs aql in a new session with a pty as stdin but not as its controlling terminal, as under setsid
+    or su -c, types into it or interrupts it with signum, and returns the output, what the terminal echoed
+    and whether echo is on after. aql starts with the signals in ignore ignored, as under nohup."""
+    aql = os.path.abspath((glob.glob("target/*/bin/aql") + glob.glob("../target/*/bin/aql"))[0])
+    conf = ["--only-config-file", config] if config else ["--no-config-file"]
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        [aql] + conf + args + target,
+        stdin=slave,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        preexec_fn=functools.partial(ignore_signals, ignore) if ignore else None,
+    )
+    echoed = b""
+
+    try:
+        # Type only once echo is off, or after a grace period if it never goes off.
+        deadline = time.time() + 2
+        while termios.tcgetattr(slave)[3] & termios.ECHO and time.time() < deadline:
+            time.sleep(0.05)
+        if interrupt:
+            proc.send_signal(signum)
+            if type_after_interrupt:
+                time.sleep(0.5)
+        if not interrupt or type_after_interrupt:
+            os.write(master, typed.encode() + b"\n")
+
+        while select.select([master], [], [], 1)[0]:
+            try:
+                chunk = os.read(master, 1024)
+            except OSError:
+                break
+            if not chunk:
+                break
+            echoed += chunk
+
+        out, err = proc.communicate(timeout=30)
+        echo_after = bool(termios.tcgetattr(slave)[3] & termios.ECHO)
+    finally:
+        proc.kill()
+        os.close(slave)
+        os.close(master)
+
+    return out.decode() + err.decode(), echoed.decode(errors="replace"), echo_after
 
 
 class PasswordSourceTest(unittest.TestCase):
@@ -571,6 +648,116 @@ class PasswordSourceTest(unittest.TestCase):
         self.assertNotIn(TLS_KEY_FAILED, out)
         self.assertIn(CONNECT_FAILED, out)
 
+    @parameterized.expand(
+        [
+            (source + "_" + case, source, value)
+            for source in ["command_line", "config_file", "prompt"]
+            for case, value in [("env", " env:" + VAR + " "), ("literal", "  " + SECRET + " \t")]
+        ]
+    )
+    def test_padded_tls_keyfile_password_is_trimmed(self, name, source, value):
+        opt = "--tls-keyfile-password"
+
+        if source == "prompt":
+            with mock.patch.dict(os.environ, {VAR: SECRET}):
+                out = run_with_prompt(self.option_args(opt) + [opt], value)
+        elif source == "config_file":
+            config = self.write_config(
+                name + ".conf",
+                '[cluster]\n{}tls-keyfile-password = "{}"\n'.format(self.option_config(opt), value.replace("\t", "\\t")),
+            )
+            rc, out = run([], {VAR: SECRET}, config)
+        else:
+            rc, out = run(self.option_args(opt) + [opt + "=" + value], {VAR: SECRET})
+
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_password_leading_nbsp_is_literal(self):
+        opt = "--tls-keyfile-password"
+        rc, out = run(self.option_args(opt) + [opt + "=\u00a0env:" + VAR], {VAR: SECRET})
+
+        self.assertNotIn(opt + ":", out)
+        self.assertIn(TLS_KEY_FAILED, out)
+
+    def test_piped_tls_keyfile_password_trims_every_whitespace_character(self):
+        opt = "--tls-keyfile-password"
+        rc, out = run(self.option_args(opt) + [opt], {VAR: SECRET}, piped="\v\f env:" + VAR + " \t\r\n")
+
+        self.assertNotIn(opt + ":", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_piped_tls_keyfile_password_is_trimmed_and_resolved(self):
+        opt = "--tls-keyfile-password"
+        rc, out = run(self.option_args(opt) + [opt], {VAR: SECRET}, piped=" env:" + VAR + " \n")
+
+        self.assertIn("Enter TLS-Keyfile Password: ", out)
+        self.assertNotIn(opt + ":", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_piped_password_and_tls_keyfile_password_read_one_line_each(self):
+        args = ["-U", "admin", "-P", "--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password"]
+        rc, out = run(args, {VAR: SECRET}, piped=SECRET + "\n env:" + VAR + " \n")
+
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def prompt_args(self, opt):
+        return ["-U", "admin", "-P"] if opt == "--password" else self.option_args(opt) + [opt]
+
+    @parameterized.expand(
+        [
+            ("password", "--password", "Enter Password: "),
+            ("tls_keyfile_password", "--tls-keyfile-password", "Enter TLS-Keyfile Password: "),
+        ]
+    )
+    def test_terminal_stdin_without_a_controlling_terminal_prompts(self, _, opt, prompt):
+        """Under setsid or su -c, /dev/tty cannot be opened but stdin is still a terminal."""
+        out, echoed, echo_after = run_with_terminal_stdin(self.prompt_args(opt), SECRET)
+
+        self.assertIn(prompt, out)
+
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_terminal_stdin_without_a_controlling_terminal_does_not_echo(self, _, opt):
+        out, echoed, echo_after = run_with_terminal_stdin(self.prompt_args(opt), SECRET)
+
+        self.assertNotIn(SECRET, echoed)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_terminal_stdin_without_a_controlling_terminal_restores_echo(self, _, opt):
+        out, echoed, echo_after = run_with_terminal_stdin(self.prompt_args(opt), SECRET)
+
+        self.assertTrue(echo_after)
+
+    @parameterized.expand([("password", "--password"), ("tls_keyfile_password", "--tls-keyfile-password")])
+    def test_terminal_stdin_without_a_controlling_terminal_restores_echo_when_interrupted(self, _, opt):
+        out, echoed, echo_after = run_with_terminal_stdin(self.prompt_args(opt), SECRET, interrupt=True)
+
+        self.assertTrue(echo_after)
+
+    @parameterized.expand(
+        [
+            (opt.strip("-").replace("-", "_") + "_" + sig.name.lower(), opt, sig)
+            for opt in ["--password", "--tls-keyfile-password"]
+            for sig in [signal.SIGHUP, signal.SIGQUIT]
+        ]
+    )
+    def test_terminal_stdin_without_a_controlling_terminal_keeps_reading_on_an_ignored_signal(self, _, opt, sig):
+        """A signal ignored on entry, as under nohup, stays ignored and does not end the read. aql sets its own
+        SIGINT and SIGTERM handlers at startup, so only SIGHUP and SIGQUIT can still be ignored at the prompt."""
+        out, echoed, echo_after = run_with_terminal_stdin(
+            self.prompt_args(opt), SECRET, interrupt=True, signum=sig, ignore=(sig,), type_after_interrupt=True
+        )
+
+        self.assertIn(CONNECT_FAILED, out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertNotIn(SECRET, echoed)
+
 
 class PasswordReachesServerTest(unittest.TestCase):
     """The resolved --password is what the client sends at login, not just something that resolves."""
@@ -620,6 +807,88 @@ class PasswordReachesServerTest(unittest.TestCase):
 
         self.assertNotEqual(typed, literal_login(SECRET))
         self.assertEqual(typed, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + VAR)]))
+
+    def test_typed_value_is_not_trimmed(self):
+        padded = " " + SECRET + " "
+
+        self.assertEqual(capture_login(["-U", "admin", "-P"], typed=padded), literal_login(padded))
+
+    def test_piped_value_is_trimmed(self):
+        self.assertEqual(capture_login(["-U", "admin", "-P"], piped=" " + SECRET + " \r\n"), literal_login(SECRET))
+
+    def test_piped_value_trims_every_whitespace_character(self):
+        piped = "\v\f " + SECRET + " \t\r\n"
+
+        self.assertEqual(capture_login(["-U", "admin", "-P"], piped=piped), literal_login(SECRET))
+
+    def test_piped_value_keeps_other_spaces(self):
+        padded = " " + SECRET + " "
+
+        self.assertEqual(capture_login(["-U", "admin", "-P"], piped=padded + "\n"), literal_login(padded))
+
+    def test_piped_value_prompts_on_stderr(self):
+        """docker exec -i, kubectl exec -i and ssh without -t have no terminal, but a person may be typing."""
+        out = utils.run_aql(
+            ["--no-config-file", "-U", "admin", "-P"] + UNREACHABLE,
+            piped=SECRET + "\n",
+        )
+
+        self.assertIn("Enter Password: ", out.stderr.decode())
+        self.assertNotIn("Enter Password", out.stdout.decode())
+
+    def test_piped_value_leaves_the_rest_of_stdin(self):
+        """With no terminal, only the password line is read, so the commands piped after it still run."""
+        r, w = os.pipe()
+        os.write(w, (SECRET + "\nshow sets\n").encode())
+        os.close(w)
+        try:
+            piped = capture_login(["-U", "admin", "-P"], stdin=r)
+            left = os.read(r, 1024)
+        finally:
+            os.close(r)
+
+        self.assertEqual(piped, literal_login(SECRET))
+        self.assertEqual(left, b"show sets\n")
+
+    def test_terminal_stdin_without_a_controlling_terminal_is_not_trimmed(self):
+        padded = " " + SECRET + " "
+
+        self.assertEqual(
+            capture_login(["-U", "admin", "-P"], typed=padded, terminal_stdin=True), literal_login(padded)
+        )
+
+    def test_terminal_stdin_without_a_controlling_terminal_ignored_signal_keeps_typed_value(self):
+        typed = capture_login(
+            ["-U", "admin", "-P"],
+            typed=SECRET,
+            terminal_stdin=True,
+            interrupt=True,
+            signum=signal.SIGHUP,
+            ignore=(signal.SIGHUP,),
+            type_after_interrupt=True,
+        )
+
+        self.assertEqual(typed, literal_login(SECRET))
+
+    def test_piped_value_is_sent_as_is(self):
+        piped = capture_login(["-U", "admin", "-P"], {VAR: SECRET}, piped="env:" + VAR + "\n")
+
+        self.assertNotEqual(piped, literal_login(SECRET))
+        self.assertEqual(piped, capture_login(["-U", "admin", "-P", "b64:" + b64("env:" + VAR)]))
+
+    def test_terminal_is_used_before_piped_stdin(self):
+        commands = b"show sets\nshow bins\n"
+        r, w = os.pipe()
+        os.write(w, commands)
+        os.close(w)
+        try:
+            typed = capture_login(["-U", "admin", "-P"], typed=SECRET, stdin=r)
+            left = os.read(r, 1024)
+        finally:
+            os.close(r)
+
+        self.assertEqual(typed, literal_login(SECRET))
+        self.assertEqual(left, commands)
 
     def test_config_file(self):
         config = os.path.join(self.dir, "astools.conf")
@@ -699,6 +968,36 @@ class PasswordLengthTest(unittest.TestCase):
         self.assertNotIn(CONNECT_FAILED, out)
         self.assertNotIn("Invalid password", out)
 
+    def test_piped_padded_longest_value_filling_the_bound_is_sent(self):
+        """A last line with no newline that exactly fills the read bound is complete, not cut off."""
+        piped = "   " + self.LONGEST
+
+        self.assertEqual(capture_login(["-U", "admin", "-P"], piped=piped), literal_login(self.LONGEST))
+
+    def test_piped_cut_off_value_is_rejected(self):
+        rc, out = run(["-U", "admin", "-P"], piped=" " * 10 + "x" * 100)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("Enter Password: ", out)
+        self.assertIn("--password: password is longer than 63 bytes\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("cut_off", "admin\0" + "0" * 200),
+            ("whole_line", "ad\0min\n"),
+            ("only_nul", "\0" * 200),
+        ]
+    )
+    def test_piped_value_with_a_nul_is_rejected(self, _, piped):
+        """A NUL ended the password early, which let a cut-off line past the length check and ran the
+        rest of the line as an aql command."""
+        rc, out = run(["-U", "admin", "-P"], piped=piped)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: password from stdin contains a NUL byte\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
     def test_config_file_too_long_value_is_rejected(self):
         config = os.path.join(self.dir, "astools-long.conf")
         with open(config, "w") as f:
@@ -767,6 +1066,27 @@ class PasswordLengthTest(unittest.TestCase):
 
         self.assertNotEqual(rc, 0)
         self.assertIn("--tls-keyfile-password: value from file {} is longer than 1024 bytes\n".format(path), out)
+
+    def test_tls_keyfile_password_piped_padded_longest_value_filling_the_bound_loads_key(self):
+        rc, out = run(self.key_args(), piped="   " + self.KEY_LONGEST)
+
+        self.assert_key_loaded(out)
+
+    def test_tls_keyfile_password_piped_cut_off_value_is_rejected(self):
+        rc, out = run(self.key_args(), piped=" " * 10 + "x" * 2000)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("Enter TLS-Keyfile Password: ", out)
+        self.assert_key_password_rejected(out, "password")
+
+    @parameterized.expand([("cut_off", "k\0" + "k" * 2000), ("whole_line", "k\0k\n")])
+    def test_tls_keyfile_password_piped_value_with_a_nul_is_rejected(self, _, piped):
+        rc, out = run(self.key_args(), piped=piped)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--tls-keyfile-password: password from stdin contains a NUL byte\n", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertNotIn(CONNECT_FAILED, out)
 
     def test_tls_keyfile_password_config_file_too_long_value_is_rejected(self):
         config = os.path.join(self.dir, "astools-long-tls.conf")

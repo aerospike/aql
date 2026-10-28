@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -51,6 +53,7 @@
 #define ASQL_HISTORY_FILE ".aql_history"
 #define ASQL_HISTORY_MAXLINES 1000
 #define TLS_KEYFILE_PASSWORD_MAX_LEN 1024
+#define PASSWORD_WHITESPACE " \t\n\v\f\r"
 
 
 //=========================================================
@@ -59,6 +62,7 @@
 
 char* g_prompt = "aql> ";
 static aerospike s_aerospike;
+static volatile sig_atomic_t s_password_signal = 0;
 bool g_inprogress = false;
 asql_config* g_config = NULL;
 aerospike* g_aerospike = &s_aerospike;
@@ -81,6 +85,10 @@ static bool client_log_cb(as_log_level level, const char* func, const char* file
 
 static bool password_has_source(const char* value);
 static bool password_literal_fits(const char* opt, const char* pw, size_t max_len);
+static void password_on_signal(int sig);
+static bool password_read_byte(char* c);
+static char* password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off);
+static void password_trim(char* pw);
 static bool read_password(const char* opt, char** ptr, size_t max_len, bool first_line);
 static void add_tls_host(asql_config* c, as_config* config);
 
@@ -281,9 +289,10 @@ asql_init(asql_config* c)
 		// Prompt after first screen
 		if (strcmp(c->base.password, DEFAULTPASSWORD) == 0) {
 			free(c->base.password);
-			c->base.password = strdup(getpass("Enter Password: "));
+			c->base.password = password_prompt(password_opt, "Enter Password: ", AS_PASSWORD_SIZE - 1, NULL);
 
-			if (! pki && ! password_literal_fits(password_opt, c->base.password, AS_PASSWORD_SIZE - 1)) {
+			if (c->base.password == NULL ||
+					(! pki && ! password_literal_fits(password_opt, c->base.password, AS_PASSWORD_SIZE - 1))) {
 				return false;
 			}
 		}
@@ -321,9 +330,19 @@ asql_init(asql_config* c)
 				"tls-keyfile-password in config file" : "--tls-keyfile-password";
 
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
+			bool cut_off;
+
 			free(c->base.tls.keyfile_pw);
-			c->base.tls.keyfile_pw = strdup(getpass("Enter TLS-Keyfile Password: "));
+			c->base.tls.keyfile_pw = password_prompt(keyfile_pw_opt, "Enter TLS-Keyfile Password: ",
+					TLS_KEYFILE_PASSWORD_MAX_LEN, &cut_off);
+
+			if (c->base.tls.keyfile_pw == NULL || (cut_off && ! password_literal_fits(keyfile_pw_opt,
+					c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN))) {
+				return false;
+			}
 		}
+
+		password_trim(c->base.tls.keyfile_pw);
 
 		if (! read_password(keyfile_pw_opt, &c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN, true)) {
 			return false;
@@ -594,6 +613,153 @@ password_has_source(const char* value)
 {
 	return strncmp(value, "env:", 4) == 0 || strncmp(value, "env-b64:", 8) == 0 ||
 			strncmp(value, "b64:", 4) == 0 || strncmp(value, "file:", 5) == 0;
+}
+
+static void
+password_trim(char* pw)
+{
+	size_t start = strspn(pw, PASSWORD_WHITESPACE);
+	size_t len = strlen(pw + start);
+
+	while (len != 0 && strchr(PASSWORD_WHITESPACE, pw[start + len - 1]) != NULL) {
+		len--;
+	}
+
+	memmove(pw, pw + start, len);
+	pw[len] = 0;
+}
+
+static void
+password_on_signal(int sig)
+{
+	s_password_signal = sig;
+}
+
+static bool
+password_read_byte(char* c)
+{
+	while (true) {
+		ssize_t n = read(STDIN_FILENO, c, 1);
+
+		if (n == 1) {
+			return true;
+		}
+
+		if (n < 0 && errno == EINTR && s_password_signal == 0) {
+			continue;
+		}
+
+		return false;
+	}
+}
+
+static char*
+password_prompt(const char* opt, const char* prompt, size_t max_len, bool* cut_off)
+{
+	if (cut_off != NULL) {
+		*cut_off = false;
+	}
+
+	int tty = open("/dev/tty", O_RDWR);
+
+	if (tty >= 0) {
+		close(tty);
+		return strdup(getpass(prompt));
+	}
+
+	size_t cap = max_len + 3;
+	char* pw = malloc(cap + 1);
+
+	if (pw == NULL) {
+		fprintf(stderr, "%s: out of memory reading stdin\n", opt);
+		return NULL;
+	}
+
+	static const int signals[] = { SIGHUP, SIGINT, SIGQUIT, SIGTERM };
+	size_t n_signals = sizeof(signals) / sizeof(signals[0]);
+	struct sigaction saved_sa[sizeof(signals) / sizeof(signals[0])];
+	struct termios saved_term;
+	bool typed = isatty(STDIN_FILENO) != 0;
+	bool guarded = typed && tcgetattr(STDIN_FILENO, &saved_term) == 0;
+	bool echo_off = false;
+
+	fputs(prompt, stderr);
+	s_password_signal = 0;
+
+	// While echo is off, a signal restores the terminal before it takes effect.
+	if (guarded) {
+		struct sigaction sa = { .sa_handler = password_on_signal };
+		struct termios term = saved_term;
+
+		sigemptyset(&sa.sa_mask);
+
+		for (size_t i = 0; i < n_signals; i++) {
+			sigaction(signals[i], NULL, &saved_sa[i]);
+
+			if (saved_sa[i].sa_handler != SIG_IGN) {
+				sigaction(signals[i], &sa, NULL);
+			}
+		}
+
+		term.c_lflag &= ~(tcflag_t)(ECHO | ECHONL);
+		echo_off = tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) == 0;
+	}
+
+	size_t len = 0;
+	char c;
+
+	// One byte at a time, so the rest of stdin is left for the aql prompt.
+	while (len < cap && password_read_byte(&c)) {
+		pw[len++] = c;
+
+		if (c == '\n') {
+			break;
+		}
+	}
+
+	// A line that fills the bound is complete only if the input ends or the line does.
+	bool cut = len == cap && pw[len - 1] != '\n' && password_read_byte(&c) && c != '\n';
+
+	pw[len] = 0;
+
+	if (echo_off) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved_term);
+		fputc('\n', stderr);
+	}
+
+	if (guarded) {
+		for (size_t i = 0; i < n_signals; i++) {
+			sigaction(signals[i], &saved_sa[i], NULL);
+		}
+
+		if (s_password_signal != 0) {
+			raise(s_password_signal);
+			free(pw);
+			return NULL;
+		}
+	}
+
+	if (memchr(pw, 0, len) != NULL) {
+		fprintf(stderr, "%s: password from stdin contains a NUL byte\n", opt);
+		free(pw);
+		return NULL;
+	}
+
+	// A cut-off line stays as read so the length check rejects it.
+	if (! cut) {
+		if (! typed) {
+			password_trim(pw);
+		}
+		else if (len != 0 && pw[len - 1] == '\n') {
+			pw[len - 1] = 0;
+		}
+	}
+
+	if (cut_off != NULL) {
+		*cut_off = cut;
+	}
+
+	return pw;
 }
 
 static bool
