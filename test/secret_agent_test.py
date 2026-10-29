@@ -55,6 +55,20 @@ SECRETS = {
 
 CAFILE_DEPRECATED = "Argument --sa-cafile is deprecated. Use --sa-ca-file instead.\n"
 
+SA_EXPECTED = {
+    "sa-address": "<host>[:<port>] or [<ipv6>][:<port>]",
+    "sa-port": "an integer from 1 to 65535",
+    "sa-timeout": "an integer from 1 to 2147483647",
+    "sa-ca-file": "a path to a CA certificate file",
+    "sa-cafile": "a path to a CA certificate file",
+}
+
+
+def config_value_error(value: str, key: str, section: str = "secret-agent") -> str:
+    return 'invalid value "{}" for {} in the [{}] config section, expected {}\n'.format(
+        value, key, section, SA_EXPECTED[key]
+    )
+
 
 def b64(value: str) -> str:
     return base64.b64encode(value.encode()).decode()
@@ -338,44 +352,44 @@ class SecretAgentOptionTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("timeout_text", "--sa-timeout", "abc", "--sa-timeout: invalid value abc, expected an integer from 1 to 2147483647"),
-            ("timeout_zero", "--sa-timeout", "0", "--sa-timeout: invalid value 0, expected an integer from 1 to 2147483647"),
-            ("timeout_negative", "--sa-timeout", "-1", "--sa-timeout: invalid value -1, expected an integer from 1 to 2147483647"),
-            ("timeout_too_big", "--sa-timeout", "2147483648", "--sa-timeout: invalid value 2147483648, expected an integer from 1 to 2147483647"),
-            ("timeout_plus_sign", "--sa-timeout", "+5", "--sa-timeout: invalid value +5, expected an integer from 1 to 2147483647"),
-            ("timeout_leading_space", "--sa-timeout", " 5", "--sa-timeout: invalid value  5, expected an integer from 1 to 2147483647"),
-            ("timeout_non_ascii_digits", "--sa-timeout", "５", "--sa-timeout: invalid value ５, expected an integer from 1 to 2147483647"),
-            ("port_zero", "--sa-port", "0", "--sa-port: invalid value 0"),
-            ("port_too_big", "--sa-port", "65536", "--sa-port: invalid value 65536"),
-            ("port_text", "--sa-port", "http", "--sa-port: invalid value http"),
-            ("address_empty", "--sa-address", "", "--sa-address: invalid value "),
-            ("address_no_host", "--sa-address", ":3005", "--sa-address: invalid value :3005"),
-            ("address_empty_port", "--sa-address", "host:", "--sa-address: invalid value host:"),
-            ("address_bad_port", "--sa-address", "host:99999", "--sa-address: invalid value host:99999"),
-            ("address_unclosed_bracket", "--sa-address", "[::1", "--sa-address: invalid value [::1"),
-            ("address_empty_brackets", "--sa-address", "[]:3005", "--sa-address: invalid value []:3005"),
-            ("address_junk_after_bracket", "--sa-address", "[::1]x", "--sa-address: invalid value [::1]x"),
-            ("address_extra_colon", "--sa-address", "host:3005:x", "--sa-address: invalid value host:3005:x"),
-            ("address_ipv4_extra_colon", "--sa-address", "10.0.0.1:3005:1", "--sa-address: invalid value 10.0.0.1:3005:1"),
-            ("address_bad_ipv6", "--sa-address", "1::2::3", "--sa-address: invalid value 1::2::3"),
-            ("address_bad_ipv6_zone", "--sa-address", "1::2::3%lo0", "--sa-address: invalid value 1::2::3%lo0"),
-            ("address_empty_zone", "--sa-address", "fe80::1%", "--sa-address: invalid value fe80::1%"),
-            ("address_bracketed_not_ipv6", "--sa-address", "[host:3005:x]", "--sa-address: invalid value [host:3005:x]"),
-            ("address_bracketed_not_ipv6_port", "--sa-address", "[host:3005:x]:3005", "--sa-address: invalid value [host:3005:x]:3005"),
-            ("address_bracketed_one_colon", "--sa-address", "[a:b]", "--sa-address: invalid value [a:b]"),
-            ("address_bracketed_empty_zone", "--sa-address", "[fe80::1%]:3005", "--sa-address: invalid value [fe80::1%]:3005"),
-            ("address_bracketed_hostname", "--sa-address", "[localhost]", "--sa-address: invalid value [localhost]"),
-            ("address_bracketed_hostname_port", "--sa-address", "[localhost]:3005", "--sa-address: invalid value [localhost]:3005"),
-            ("address_bracketed_ipv4", "--sa-address", "[127.0.0.1]", "--sa-address: invalid value [127.0.0.1]"),
-            ("address_bracketed_ipv4_port", "--sa-address", "[127.0.0.1]:3005", "--sa-address: invalid value [127.0.0.1]:3005"),
-            ("address_bracketed_hostname_zone", "--sa-address", "[host%lo0]", "--sa-address: invalid value [host%lo0]"),
+            ("timeout_text", "--sa-timeout", "abc"),
+            ("timeout_zero", "--sa-timeout", "0"),
+            ("timeout_negative", "--sa-timeout", "-1"),
+            ("timeout_too_big", "--sa-timeout", "2147483648"),
+            ("timeout_plus_sign", "--sa-timeout", "+5"),
+            ("timeout_leading_space", "--sa-timeout", " 5"),
+            ("timeout_non_ascii_digits", "--sa-timeout", "５"),
+            ("port_zero", "--sa-port", "0"),
+            ("port_too_big", "--sa-port", "65536"),
+            ("port_text", "--sa-port", "http"),
+            ("address_empty", "--sa-address", ""),
+            ("address_no_host", "--sa-address", ":3005"),
+            ("address_empty_port", "--sa-address", "host:"),
+            ("address_bad_port", "--sa-address", "host:99999"),
+            ("address_unclosed_bracket", "--sa-address", "[::1"),
+            ("address_empty_brackets", "--sa-address", "[]:3005"),
+            ("address_junk_after_bracket", "--sa-address", "[::1]x"),
+            ("address_extra_colon", "--sa-address", "host:3005:x"),
+            ("address_ipv4_extra_colon", "--sa-address", "10.0.0.1:3005:1"),
+            ("address_bad_ipv6", "--sa-address", "1::2::3"),
+            ("address_bad_ipv6_zone", "--sa-address", "1::2::3%lo0"),
+            ("address_empty_zone", "--sa-address", "fe80::1%"),
+            ("address_bracketed_not_ipv6", "--sa-address", "[host:3005:x]"),
+            ("address_bracketed_not_ipv6_port", "--sa-address", "[host:3005:x]:3005"),
+            ("address_bracketed_one_colon", "--sa-address", "[a:b]"),
+            ("address_bracketed_empty_zone", "--sa-address", "[fe80::1%]:3005"),
+            ("address_bracketed_hostname", "--sa-address", "[localhost]"),
+            ("address_bracketed_hostname_port", "--sa-address", "[localhost]:3005"),
+            ("address_bracketed_ipv4", "--sa-address", "[127.0.0.1]"),
+            ("address_bracketed_ipv4_port", "--sa-address", "[127.0.0.1]:3005"),
+            ("address_bracketed_hostname_zone", "--sa-address", "[host%lo0]"),
         ]
     )
-    def test_bad_option(self, _, opt, value, expected):
+    def test_bad_option(self, _, opt, value):
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", opt, value])
 
         self.assertNotEqual(rc, 0)
-        self.assertIn(expected + "\n", out)
+        self.assertIn('{}: invalid value "{}", expected {}\n'.format(opt, value, SA_EXPECTED[opt[2:]]), out)
         self.assertNotIn("secret-agent:", out)
         self.assertNotIn(CONNECT_FAILED, out)
 
@@ -387,7 +401,7 @@ class SecretAgentOptionTest(unittest.TestCase):
 
         config = self.config("[secret-agent]\nsa-timeout = {}\n".format(value))
         rc, out = run(["-U", "admin", "-P", "literal"], config=config)
-        self.assertNotIn("Invalid parameter value", out)
+        self.assertNotIn("invalid value", out)
         self.assertIn(CONNECT_FAILED, out)
 
     @parameterized.expand([("short", 200, None, 0.8), ("long", 2000, 1.9, None)])
@@ -399,7 +413,7 @@ class SecretAgentOptionTest(unittest.TestCase):
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
         elapsed = time.monotonic() - start
 
-        self.assertNotIn("Invalid parameter value", out)
+        self.assertNotIn("invalid value", out)
         self.assertIn("secret-agent: ERR: socket poll timed out\n", out)
         self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
         if at_least is not None:
@@ -427,7 +441,7 @@ class SecretAgentOptionTest(unittest.TestCase):
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("Invalid parameter value for `sa-timeout` in `secret-agent` section.", out)
+        self.assertIn(config_value_error(value[1:-1], "sa-timeout"), out)
         self.assertNotIn(CONNECT_FAILED, out)
 
     @parameterized.expand([("integer", "{}"), ("string", '"{}"')])
@@ -533,7 +547,7 @@ class SecretAgentOptionTest(unittest.TestCase):
 
         config = self.config('[secret-agent]\nsa-address = "{}"\n'.format(value))
         rc, out = run(["-U", "admin", "-P", "literal"], config=config)
-        self.assertNotIn("Invalid parameter value", out)
+        self.assertNotIn("invalid value", out)
         self.assertIn(CONNECT_FAILED, out)
 
     def test_unreadable_cafile(self):
@@ -666,20 +680,34 @@ class SecretAgentOptionTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("command_line_ca_file", ["--sa-ca-file", ""], None, "--sa-ca-file: "),
-            ("command_line_cafile", ["--sa-cafile", ""], None, "--sa-cafile: "),
-            ("config_ca_file", [], 'sa-ca-file = ""', "sa-ca-file in the [secret-agent] config section: "),
-            ("config_cafile", [], 'sa-cafile = ""', "sa-cafile in the [secret-agent] config section: "),
+            (name + "_" + password_name, args, content, error, password)
+            for name, args, content, error in [
+                (
+                    "command_line_ca_file", ["--sa-ca-file", ""], None,
+                    '--sa-ca-file: invalid value "", expected a path to a CA certificate file\n',
+                ),
+                (
+                    "command_line_cafile", ["--sa-cafile", ""], None,
+                    '--sa-cafile: invalid value "", expected a path to a CA certificate file\n',
+                ),
+                ("config_ca_file", [], '[secret-agent]\nsa-ca-file = ""\n', config_value_error("", "sa-ca-file")),
+                ("config_cafile", [], '[secret-agent]\nsa-cafile = ""\n', config_value_error("", "sa-cafile")),
+                (
+                    "instance_config_ca_file", ["--instance", "a"], '[secret-agent_a]\nsa-ca-file = ""\n',
+                    config_value_error("", "sa-ca-file", "secret-agent_a"),
+                ),
+            ]
+            for password_name, password in [("secret", "secrets:aql:pw"), ("literal", "literal")]
         ]
     )
-    def test_empty_ca_file_path(self, _, args, line, error):
+    def test_empty_ca_file_path(self, _, args, content, error, password):
         port, requests = self.answering_agent()
-        config = self.config("[secret-agent]\n{}\n".format(line)) if line else None
-        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", port] + args, config=config)
+        config = self.config(content) if content else None
+        rc, out = run(["-U", "admin", "-P", password, "--sa-port", port] + args, config=config)
 
         self.assertNotEqual(rc, 0)
         self.assertEqual(requests, [])
-        self.assertRegex(out, "(?m)^" + re.escape(error))
+        self.assertIn(error, out)
         self.assertNotIn("secret-agent:", out)
         self.assertNotIn(CONNECT_FAILED, out)
 
@@ -828,6 +856,20 @@ class SecretAgentOptionTest(unittest.TestCase):
 
         self.assert_resolved_by(requests, rc, out)
 
+    def test_include_directory_file_with_path_length_multiple_of_16(self):
+        port, requests = self.answering_agent()
+        include_dir = tempfile.mkdtemp(dir=self.dir)
+        # The old buffer had no room for the NUL, and a multiple of 16 leaves no alignment padding to absorb it.
+        name = "x" * ((-len(include_dir) - 1) % 16 or 16)
+        write(os.path.join(include_dir, name), "[secret-agent]\nsa-port = {}\n".format(port))
+        config = self.config(
+            '[secret-agent]\nsa-port = {}\n[include]\ndirectory = "{}"\n'.format(self.closed, include_dir)
+        )
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertEqual((len(include_dir) + 1 + len(name)) % 16, 0)
+        self.assert_resolved_by(requests, rc, out)
+
     def test_config_file_option_beats_home_config_file(self):
         port, requests = self.answering_agent()
         home = tempfile.mkdtemp(dir=self.dir)
@@ -891,16 +933,16 @@ class SecretAgentOptionTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            (name + "_" + password_name, line, password)
-            for name, line in [
-                ("unknown_key", 'sa-host = "127.0.0.1"'),
-                ("bad_value", "sa-timeout = 0"),
-                ("bad_address", 'sa-address = "[::1"'),
+            (name + "_" + password_name, line, error, password)
+            for name, line, error in [
+                ("unknown_key", 'sa-host = "127.0.0.1"', "Unknown parameter `sa-host` in `secret-agent` section.\n"),
+                ("bad_value", "sa-timeout = 0", config_value_error("0", "sa-timeout")),
+                ("bad_address", 'sa-address = "[::1"', config_value_error("[::1", "sa-address")),
             ]
             for password_name, password in [("secret", "secrets:aql:pw"), ("literal", "literal")]
         ]
     )
-    def test_bad_section_fails_closed(self, _, line, password):
+    def test_bad_section_fails_closed(self, _, line, error, password):
         port, requests = self.answering_agent()
         config = self.config(
             '[cluster]\nuser = "admin"\npassword = "{}"\n[secret-agent]\nsa-port = {}\n{}\n'.format(password, port, line)
@@ -909,7 +951,7 @@ class SecretAgentOptionTest(unittest.TestCase):
 
         self.assertNotEqual(rc, 0)
         self.assertEqual(requests, [])
-        self.assertIn("in `secret-agent` section.", out)
+        self.assertIn(error, out)
         self.assertNotIn(CONNECT_FAILED, out)
 
     def test_prompted_password_is_literal(self):
@@ -922,31 +964,35 @@ class SecretAgentOptionTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("timeout_text", 'sa-timeout = "1s"', "sa-timeout"),
-            ("timeout_zero", "sa-timeout = 0", "sa-timeout"),
-            ("timeout_negative", "sa-timeout = -1", "sa-timeout"),
-            ("timeout_too_big", "sa-timeout = 2147483648", "sa-timeout"),
-            ("port_zero", "sa-port = 0", "sa-port"),
-            ("port_too_big", 'sa-port = "65536"', "sa-port"),
-            ("port_text", 'sa-port = "http"', "sa-port"),
-            ("port_bool", "sa-port = true", "sa-port"),
-            ("address_int", "sa-address = 1", "sa-address"),
-            ("address_bad", 'sa-address = "[::1"', "sa-address"),
-            ("address_bad_port", 'sa-address = "host:0"', "sa-address"),
-            ("address_extra_colon", 'sa-address = "host:3005:x"', "sa-address"),
-            ("address_bad_ipv6_zone", 'sa-address = "1::2::3%lo0"', "sa-address"),
-            ("address_bracketed_not_ipv6", 'sa-address = "[host:3005:x]:3005"', "sa-address"),
-            ("address_bracketed_hostname", 'sa-address = "[localhost]:3005"', "sa-address"),
-            ("address_bracketed_ipv4", 'sa-address = "[127.0.0.1]"', "sa-address"),
-            ("cafile_int", "sa-cafile = 1", "sa-cafile"),
+            ("timeout_text", 'sa-timeout = "1s"', "sa-timeout", "1s"),
+            ("timeout_zero", "sa-timeout = 0", "sa-timeout", "0"),
+            ("timeout_negative", "sa-timeout = -1", "sa-timeout", "-1"),
+            ("timeout_too_big", "sa-timeout = 2147483648", "sa-timeout", "2147483648"),
+            ("timeout_float", "sa-timeout = 1.5", "sa-timeout", "1.5"),
+            ("port_zero", "sa-port = 0", "sa-port", "0"),
+            ("port_plus_zero", "sa-port = +0", "sa-port", "+0"),
+            ("port_too_big", 'sa-port = "65536"', "sa-port", "65536"),
+            ("port_too_big_underscores", "sa-port = 65_536", "sa-port", "65_536"),
+            ("port_text", 'sa-port = "http"', "sa-port", "http"),
+            ("port_bool", "sa-port = true", "sa-port", "true"),
+            ("address_int", "sa-address = 1", "sa-address", "1"),
+            ("address_bad", 'sa-address = "[::1"', "sa-address", "[::1"),
+            ("address_bad_port", 'sa-address = "host:0"', "sa-address", "host:0"),
+            ("address_extra_colon", 'sa-address = "host:3005:x"', "sa-address", "host:3005:x"),
+            ("address_bad_ipv6_zone", 'sa-address = "1::2::3%lo0"', "sa-address", "1::2::3%lo0"),
+            ("address_bracketed_not_ipv6", 'sa-address = "[host:3005:x]:3005"', "sa-address", "[host:3005:x]:3005"),
+            ("address_bracketed_hostname", 'sa-address = "[localhost]:3005"', "sa-address", "[localhost]:3005"),
+            ("address_bracketed_ipv4", 'sa-address = "[127.0.0.1]"', "sa-address", "[127.0.0.1]"),
+            ("cafile_int", "sa-cafile = 5", "sa-cafile", "5"),
+            ("ca_file_bool", "sa-ca-file = true", "sa-ca-file", "true"),
         ]
     )
-    def test_bad_config_value(self, _, line, key):
+    def test_bad_config_value(self, _, line, key, value):
         config = self.config("[secret-agent]\n{}\n".format(line))
         rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("Invalid parameter value for `{}` in `secret-agent` section.".format(key), out)
+        self.assertIn(config_value_error(value, key), out)
         self.assertNotIn(CONNECT_FAILED, out)
 
     def test_bad_config_value_names_instance_section(self):
@@ -954,7 +1000,14 @@ class SecretAgentOptionTest(unittest.TestCase):
         rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
 
         self.assertNotEqual(rc, 0)
-        self.assertIn("Invalid parameter value for `sa-port` in `secret-agent_a` section.", out)
+        self.assertIn(config_value_error("0", "sa-port", "secret-agent_a"), out)
+
+    def test_bad_config_value_names_default_section_without_instance_section(self):
+        config = self.config("[secret-agent]\nsa-port = 0\n")
+        rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(config_value_error("0", "sa-port"), out)
 
     def test_unknown_config_key(self):
         config = self.config('[secret-agent]\nsa-host = "127.0.0.1"\n')
@@ -1023,6 +1076,18 @@ class SecretAgentOptionTest(unittest.TestCase):
             self.assertIn(text, out)
         self.assertNotIn("--sa-cafile", out)
         self.assertEqual(out.count("5) Aerospike Secret Agent: 'secrets:<resource>:<key>'"), 2)
+
+    def test_help_names_config_file_keys(self):
+        out = utils.run_aql(["-O"]).stdout.decode()
+
+        self.assertIn(
+            "[secret-agent]\n"
+            " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.\n"
+            " In a config file, set these in the [secret-agent] section as sa-address,\n"
+            " sa-port, sa-timeout and sa-ca-file.\n"
+            " --sa-address=HOST\n",
+            out,
+        )
 
 
 LIB_SRC = utils.absolute_path("..", "modules", "secret-agent-client", "src")

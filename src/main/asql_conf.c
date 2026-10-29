@@ -56,6 +56,11 @@
 #define SA_DEFAULT_PORT "3005"
 #define SA_DEFAULT_TIMEOUT_MS 1000
 
+#define SA_ADDRESS_EXPECTED "<host>[:<port>] or [<ipv6>][:<port>]"
+#define SA_PORT_EXPECTED "an integer from 1 to 65535"
+#define SA_TIMEOUT_EXPECTED "an integer from 1 to 2147483647"
+#define SA_CA_FILE_EXPECTED "a path to a CA certificate file"
+
 //=========================================================
 // Inline and Macros.
 //
@@ -150,6 +155,7 @@ static bool set(uint16_t i, char* value);
 static char* safe_strdup(char* in, char* val);
 
 static bool sa_parse_timeout(const char* str, int* timeout_ms);
+static const char* sa_expected(const char* name);
 static const char* sa_apply(asql_sa_config* sa, const char* address, const char* port);
 static void sa_set_cafile(asql_sa_config* sa, const char* path, const char* opt);
 
@@ -310,6 +316,8 @@ print_config_file_option()
 
 	fprintf(stdout, "[secret-agent]\n");
 	fprintf(stdout, " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.\n");
+	fprintf(stdout, " In a config file, set these in the [secret-agent] section as sa-address,\n");
+	fprintf(stdout, " sa-port, sa-timeout and sa-ca-file.\n");
 	fprintf(stdout, " --sa-address=HOST\n");
 	fprintf(stdout, "                      HOST is \"<host>[:<port>]\" or \"[<ipv6>][:<port>]\".\n");
 	fprintf(stdout, "                      Secret Agent hostname or IP address.\n");
@@ -637,8 +645,8 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 
 			case 1017:
 				if (! sa_parse_timeout(optarg, &base->sa.timeout_ms)) {
-					fprintf(stderr, "--sa-timeout: invalid value %s, expected an integer from 1 to %d\n",
-							optarg, INT_MAX);
+					fprintf(stderr, "--sa-timeout: invalid value \"%s\", expected " SA_TIMEOUT_EXPECTED "\n",
+							optarg);
 					return false;
 				}
 				break;
@@ -661,16 +669,21 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 	const char* bad_sa_option = sa_apply(&base->sa, sa_address, sa_port);
 
 	if (bad_sa_option) {
-		fprintf(stderr, "--%s: invalid value %s\n", bad_sa_option,
-				strcmp(bad_sa_option, "sa-port") == 0 ? sa_port : sa_address);
+		fprintf(stderr, "--%s: invalid value \"%s\", expected %s\n", bad_sa_option,
+				strcmp(bad_sa_option, "sa-port") == 0 ? sa_port : sa_address, sa_expected(bad_sa_option));
 		return false;
 	}
 
-	if (sa_ca_file) {
-		sa_set_cafile(&base->sa, sa_ca_file, "--sa-ca-file");
+	const char* ca_option = sa_ca_file ? "--sa-ca-file" : "--sa-cafile";
+	const char* ca_file = sa_ca_file ? sa_ca_file : sa_cafile;
+
+	if (ca_file && ca_file[0] == '\0') {
+		fprintf(stderr, "%s: invalid value \"\", expected " SA_CA_FILE_EXPECTED "\n", ca_option);
+		return false;
 	}
-	else if (sa_cafile) {
-		sa_set_cafile(&base->sa, sa_cafile, "--sa-cafile");
+
+	if (ca_file) {
+		sa_set_cafile(&base->sa, ca_file, ca_option);
 	}
 
 	switch (base->outputmode) {
@@ -1330,6 +1343,26 @@ config_sa_timeout(toml_table_t* curtab, const char* name, int* ptr)
 	return true;
 }
 
+static void
+config_sa_value_error(toml_table_t* curtab, const char* name, const char* section, char errbuf[])
+{
+	const char* raw = toml_raw_in(curtab, name);
+	const char* expected = sa_expected(name);
+	char* str = NULL;
+
+	if (raw == NULL || expected == NULL) {
+		snprintf(errbuf, ERR_BUF_SIZE, "Invalid parameter value for `%s` in `%s` section.\n",
+				name, section);
+		return;
+	}
+
+	bool is_str = toml_rtos(raw, &str) == 0;
+
+	snprintf(errbuf, ERR_BUF_SIZE, "invalid value \"%s\" for %s in the [%s] config section, expected %s\n",
+			is_str ? str : raw, name, section, expected);
+	free(str);
+}
+
 static bool
 config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance, char errbuf[])
 {
@@ -1356,24 +1389,28 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 	char* ca_file = NULL;
 	char* cafile = NULL;
 	const char* name;
+	const char* address_name = NULL;
+	const char* port_name = NULL;
 	bool status = true;
 
 	for (uint8_t i = 0; status && 0 != (name = toml_key_in(curtab, i)); i++) {
 
 		if (! strcasecmp("sa-address", name)) {
 			status = config_str(curtab, name, &address);
+			address_name = name;
 
 		} else if (! strcasecmp("sa-port", name)) {
 			status = config_sa_port(curtab, name, &port);
+			port_name = name;
 
 		} else if (! strcasecmp("sa-timeout", name)) {
 			status = config_sa_timeout(curtab, name, &c->base.sa.timeout_ms);
 
 		} else if (! strcasecmp("sa-ca-file", name)) {
-			status = config_str(curtab, name, &ca_file);
+			status = config_str(curtab, name, &ca_file) && ca_file[0] != '\0';
 
 		} else if (! strcasecmp("sa-cafile", name)) {
-			status = config_str(curtab, name, &cafile);
+			status = config_str(curtab, name, &cafile) && cafile[0] != '\0';
 
 		} else {
 			snprintf(errbuf, ERR_BUF_SIZE, "Unknown parameter `%s` in `%s` section.\n", name,
@@ -1386,8 +1423,7 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 		}
 
 		if (! status) {
-			snprintf(errbuf, ERR_BUF_SIZE, "Invalid parameter value for `%s` in `%s` section.\n",
-					name, section);
+			config_sa_value_error(curtab, name, section, errbuf);
 		}
 	}
 
@@ -1395,8 +1431,8 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 		const char* bad = sa_apply(&c->base.sa, address, port);
 
 		if (bad) {
-			snprintf(errbuf, ERR_BUF_SIZE, "Invalid parameter value for `%s` in `%s` section.\n",
-					bad, section);
+			config_sa_value_error(curtab, strcmp(bad, "sa-port") == 0 ? port_name : address_name,
+					section, errbuf);
 			status = false;
 		}
 	}
@@ -1433,7 +1469,7 @@ config_from_dir(asql_config* c, const char* instance, char* dirname, int level)
 			continue;
 		}
 
-		char path[strlen(dirname) + 1 + strlen(entry->d_name)];
+		char path[strlen(dirname) + 1 + strlen(entry->d_name) + 1];
 		sprintf(path, "%s/%s", dirname, entry->d_name);
 
 		struct stat statbuf;
@@ -1659,6 +1695,28 @@ sa_parse_timeout(const char* str, int* timeout_ms)
 
 	*timeout_ms = (int)val;
 	return true;
+}
+
+static const char*
+sa_expected(const char* name)
+{
+	if (! strcasecmp("sa-address", name)) {
+		return SA_ADDRESS_EXPECTED;
+	}
+
+	if (! strcasecmp("sa-port", name)) {
+		return SA_PORT_EXPECTED;
+	}
+
+	if (! strcasecmp("sa-timeout", name)) {
+		return SA_TIMEOUT_EXPECTED;
+	}
+
+	if (! strcasecmp("sa-ca-file", name) || ! strcasecmp("sa-cafile", name)) {
+		return SA_CA_FILE_EXPECTED;
+	}
+
+	return NULL;
 }
 
 static bool
