@@ -1010,10 +1010,11 @@ class SecretAgentOptionTest(unittest.TestCase):
             "[secret-agent]",
             " --sa-address=HOST",
             "Default: 127.0.0.1:3005",
-            " --sa-port=PORT",
-            " --sa-timeout=ms",
-            "covers the TCP connect, the TLS handshake and the request,",
-            "but not the name lookup. Default: 1000",
+            " --sa-port=PORT       Secret Agent port, 1 to 65535. Overrides a port in --sa-address.\n"
+            "                      Default: 3005\n",
+            " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an integer\n"
+            "                      from 1 to 2147483647.\n"
+            "                      Default: 1000\n",
             " --sa-ca-file=path",
             "Agent and verifies its certificate against this CA. The",
             "agent's hostname or IP address must be in the certificate.",
@@ -1031,7 +1032,7 @@ C_STRING = r'"(?:[^"\\]|\\.)*"'
 # Library log lines aql prints with their arguments, and the argument expressions reviewed as safe.
 REVIEWED_LOG_ARGS = {
     "ERR: failed to lookup address: %s": "addr",
-    "ERR: connect failed: %d, errno: %d": "sock_fd, errno",
+    "ERR: connect failed, errno: %d": "conn_err",
     "ERR: response: %.*s": "(int)payload_len, payload_str",
     "ERR: SSL_connect failed: %s": "errbuf",
     "ERR: SSL_connect I/O error: %s": "errbuf",
@@ -1498,7 +1499,7 @@ class SecretAgentTest(unittest.TestCase):
         self.assertNotIn(SECRETS["too_long"], out)
         self.assertNotIn(b64(SECRETS["too_long"]), out)
 
-    def test_tls_keyfile_password_has_no_limit(self):
+    def test_tls_keyfile_password_over_63_bytes_is_used(self):
         rc, out = run(
             [
                 "--tls-enable", "--tls-keyfile", self.long_password_key,

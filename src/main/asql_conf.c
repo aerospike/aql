@@ -120,6 +120,7 @@ static struct option options[] =
 	{"sa-port", required_argument, 0, 1016},
 	{"sa-timeout", required_argument, 0, 1017},
 	{"sa-cafile", required_argument, 0, 1018},
+	{"sa-ca-file", required_argument, 0, 1019},
 
 	// Legacy
 	{"tlsEnable", no_argument, 0, 1000},
@@ -150,6 +151,7 @@ static char* safe_strdup(char* in, char* val);
 
 static bool sa_parse_timeout(const char* str, int* timeout_ms);
 static const char* sa_apply(asql_sa_config* sa, const char* address, const char* port);
+static void sa_set_cafile(asql_sa_config* sa, const char* path, const char* opt);
 
 static bool config_str(toml_table_t* curtab, const char* name, char** ptr);
 static bool config_int(toml_table_t* curtab, const char* name, int* ptr);
@@ -208,10 +210,12 @@ print_config_file_option()
                     "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
                     "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
                     "                      on the command line is as visible as a literal password.\n"
-                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-                    "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+                    "                      'file:' or 'secrets:' must be given as 'b64:' or typed at the\n"
+                    "                      prompt.\n"
                     "                      The password is read only when a user is set and the auth mode is\n"
                     "                      not PKI. It must be at most 63 bytes.\n"
+                    "                      A value fetched with 'secrets:' is used as-is.\n"
                     "                      User will be prompted on command line if -P specified and no\n"
                     "                      password is given. The typed password is used as is. With no\n"
                     "                      terminal, the password is read from one line of stdin and has\n"
@@ -255,17 +259,18 @@ print_config_file_option()
                     "                      6) String: 'PASSWORD'\n"
                     "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
                     "                      and one trailing newline is dropped after decoding.\n"
-                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-                    "                      'file:' must be given as 'b64:'.\n"
+                    "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+                    "                      'file:' or 'secrets:' must be given as 'b64:'.\n"
                     "                      Surrounding whitespace is trimmed before the form is read. A\n"
                     "                      password with surrounding whitespace must be given as 'b64:'.\n"
                     "                      The password is read only when a key file is set. It must be at\n"
                     "                      most 1024 bytes.\n"
+                    "                      A value fetched with 'secrets:' is used as-is.\n"
                     "                      Default: none\n"
                     "                      User will be prompted on command line if --tls-keyfile-password\n"
                     "                      specified and no password is given. The typed password\n"
-                    "                      accepts the forms above. With no terminal, the password is read\n"
-                    "                      from one line of stdin.\n");
+                    "                      accepts the forms above except 'secrets:'.\n"
+                    "                      With no terminal, the password is read from one line of stdin.\n");
 	fprintf(stdout, " --tls-certfile=TLS_CERTFILE <path>\n");
 	fprintf(stdout, "                      Path to the chain file for mutual authentication (if\n"
                     "                      Aerospike Cluster is supporting it).\n");
@@ -309,12 +314,12 @@ print_config_file_option()
 	fprintf(stdout, "                      HOST is \"<host>[:<port>]\" or \"[<ipv6>][:<port>]\".\n");
 	fprintf(stdout, "                      Secret Agent hostname or IP address.\n");
 	fprintf(stdout, "                      Default: 127.0.0.1:3005\n");
-	fprintf(stdout, " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n");
+	fprintf(stdout, " --sa-port=PORT       Secret Agent port, 1 to 65535. Overrides a port in --sa-address.\n");
 	fprintf(stdout, "                      Default: 3005\n");
-	fprintf(stdout, " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n");
-	fprintf(stdout, "                      covers the TCP connect, the TLS handshake and the request,\n");
-	fprintf(stdout, "                      but not the name lookup. Default: 1000\n");
-	fprintf(stdout, " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n");
+	fprintf(stdout, " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an integer\n");
+	fprintf(stdout, "                      from 1 to 2147483647.\n");
+	fprintf(stdout, "                      Default: 1000\n");
+	fprintf(stdout, " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n");
 	fprintf(stdout, "                      Agent and verifies its certificate against this CA. The\n");
 	fprintf(stdout, "                      agent's hostname or IP address must be in the certificate.\n");
 	fprintf(stdout, "                      Default: none\n");
@@ -444,6 +449,8 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 	asql_base_config* base = &conf->base;
 	const char* sa_address = NULL;
 	const char* sa_port = NULL;
+	const char* sa_ca_file = NULL;
+	const char* sa_cafile = NULL;
 
 	// Reset to optind (internal variable)
 	// to parse all options again
@@ -637,7 +644,12 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 				break;
 
 			case 1018:
-				base->sa.cafile = safe_strdup(base->sa.cafile, optarg);
+				sa_cafile = optarg;
+				fprintf(stderr, "Warning: Argument --sa-cafile is deprecated. Use --sa-ca-file instead.\n");
+				break;
+
+			case 1019:
+				sa_ca_file = optarg;
 				break;
 
 			default:
@@ -652,6 +664,13 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 		fprintf(stderr, "--%s: invalid value %s\n", bad_sa_option,
 				strcmp(bad_sa_option, "sa-port") == 0 ? sa_port : sa_address);
 		return false;
+	}
+
+	if (sa_ca_file) {
+		sa_set_cafile(&base->sa, sa_ca_file, "--sa-ca-file");
+	}
+	else if (sa_cafile) {
+		sa_set_cafile(&base->sa, sa_cafile, "--sa-cafile");
 	}
 
 	switch (base->outputmode) {
@@ -721,6 +740,7 @@ config_free(asql_config* conf)
 	free(base->sa.host);
 	free(base->sa.port);
 	free(base->sa.cafile);
+	free(base->sa.cafile_opt);
 }
 
 
@@ -1292,6 +1312,14 @@ config_sa_port(toml_table_t* curtab, const char* name, char** ptr)
 static bool
 config_sa_timeout(toml_table_t* curtab, const char* name, int* ptr)
 {
+	char* str = NULL;
+
+	if (config_str(curtab, name, &str)) {
+		bool status = sa_parse_timeout(str, ptr);
+		free(str);
+		return status;
+	}
+
 	int64_t ival;
 
 	if (0 != toml_rtoi(toml_raw_in(curtab, name), &ival) || ival < 1 || ival > INT_MAX) {
@@ -1325,6 +1353,8 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 
 	char* address = NULL;
 	char* port = NULL;
+	char* ca_file = NULL;
+	char* cafile = NULL;
 	const char* name;
 	bool status = true;
 
@@ -1339,14 +1369,19 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 		} else if (! strcasecmp("sa-timeout", name)) {
 			status = config_sa_timeout(curtab, name, &c->base.sa.timeout_ms);
 
+		} else if (! strcasecmp("sa-ca-file", name)) {
+			status = config_str(curtab, name, &ca_file);
+
 		} else if (! strcasecmp("sa-cafile", name)) {
-			status = config_str(curtab, name, &c->base.sa.cafile);
+			status = config_str(curtab, name, &cafile);
 
 		} else {
 			snprintf(errbuf, ERR_BUF_SIZE, "Unknown parameter `%s` in `%s` section.\n", name,
 					section);
 			free(address);
 			free(port);
+			free(ca_file);
+			free(cafile);
 			return false;
 		}
 
@@ -1366,8 +1401,17 @@ config_secret_agent(toml_table_t* conftab, asql_config* c, const char* instance,
 		}
 	}
 
+	if (status && (ca_file || cafile)) {
+		char opt[512];
+		snprintf(opt, sizeof(opt), "%s in the [%s] config section", ca_file ? "sa-ca-file" : "sa-cafile",
+				section);
+		sa_set_cafile(&c->base.sa, ca_file ? ca_file : cafile, opt);
+	}
+
 	free(address);
 	free(port);
+	free(ca_file);
+	free(cafile);
 	return status;
 }
 
@@ -1547,6 +1591,7 @@ config_default(asql_config* c, const char* instance)
 	c->base.sa.port = strdup(SA_DEFAULT_PORT);
 	c->base.sa.timeout_ms = SA_DEFAULT_TIMEOUT_MS;
 	c->base.sa.cafile = NULL;
+	c->base.sa.cafile_opt = NULL;
 }
 
 static bool
@@ -1732,6 +1777,15 @@ sa_apply(asql_sa_config* sa, const char* address, const char* port)
 	}
 
 	return NULL;
+}
+
+static void
+sa_set_cafile(asql_sa_config* sa, const char* path, const char* opt)
+{
+	free(sa->cafile);
+	free(sa->cafile_opt);
+	sa->cafile = strdup(path);
+	sa->cafile_opt = strdup(opt);
 }
 
 #if 0

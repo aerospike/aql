@@ -59,13 +59,13 @@
 
 typedef struct sa_log_format_s {
 	const char* fmt;
-	bool add_strerror;
+	bool errno_arg;
 } sa_log_format;
 
 // Secret agent client log lines whose arguments are safe to print; checked by test/secret_agent_test.py.
 static const sa_log_format SA_LOG_ALLOW[] = {
 	{"ERR: failed to lookup address: %s", false},
-	{"ERR: connect failed: %d, errno: %d", true},
+	{"ERR: connect failed, errno: %d", true},
 	{"ERR: response: %.*s", false},
 	{"ERR: SSL_connect failed: %s", false},
 	{"ERR: SSL_connect I/O error: %s", false},
@@ -346,6 +346,7 @@ asql_init(asql_config* c)
 	if (c->base.tls.keyfile && c->base.tls.keyfile_pw) {
 		const char* keyfile_pw_opt = c->base.tls_keyfile_pw_from_config ?
 				"tls-keyfile-password in config file" : "--tls-keyfile-password";
+		const asql_sa_config* sa = &c->base.sa;
 
 		if (strcmp(c->base.tls.keyfile_pw, DEFAULTPASSWORD) == 0) {
 			bool cut_off;
@@ -358,11 +359,13 @@ asql_init(asql_config* c)
 					c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN))) {
 				return false;
 			}
+
+			sa = NULL;
 		}
 
 		password_trim(c->base.tls.keyfile_pw);
 
-		if (! read_password(&c->base.sa, keyfile_pw_opt, &c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN, true)) {
+		if (! read_password(sa, keyfile_pw_opt, &c->base.tls.keyfile_pw, TLS_KEYFILE_PASSWORD_MAX_LEN, true)) {
 			return false;
 		}
 	}
@@ -660,8 +663,6 @@ password_fit(const char* opt, char* pw, size_t max_len, const char* what, const 
 static void
 sa_log_cb(const char* fmt, ...)
 {
-	int err = errno;
-
 	for (size_t i = 0; i < sizeof(SA_LOG_ALLOW) / sizeof(SA_LOG_ALLOW[0]); i++) {
 		if (strcmp(fmt, SA_LOG_ALLOW[i].fmt) == 0) {
 			va_list ap;
@@ -670,8 +671,10 @@ sa_log_cb(const char* fmt, ...)
 			vfprintf(stderr, fmt, ap);
 			va_end(ap);
 
-			if (SA_LOG_ALLOW[i].add_strerror) {
-				fprintf(stderr, " (%s)", strerror(err));
+			if (SA_LOG_ALLOW[i].errno_arg) {
+				va_start(ap, fmt);
+				fprintf(stderr, " (%s)", strerror(va_arg(ap, int)));
+				va_end(ap);
 			}
 
 			fprintf(stderr, "\n");
@@ -718,7 +721,7 @@ password_secret(const asql_sa_config* sa, const char* opt, const char* path)
 	if (sa->cafile) {
 		size_t ca_len;
 
-		if ((cfg.tls.ca_string = read_file("--sa-cafile", sa->cafile, &ca_len)) == NULL) {
+		if ((cfg.tls.ca_string = read_file(sa->cafile_opt, sa->cafile, &ca_len)) == NULL) {
 			return NULL;
 		}
 
@@ -769,7 +772,8 @@ static bool
 password_has_source(const char* value)
 {
 	return strncmp(value, "env:", 4) == 0 || strncmp(value, "env-b64:", 8) == 0 ||
-			strncmp(value, "b64:", 4) == 0 || strncmp(value, "file:", 5) == 0;
+			strncmp(value, "b64:", 4) == 0 || strncmp(value, "file:", 5) == 0 ||
+			strncmp(value, "secrets:", 8) == 0;
 }
 
 static void
@@ -979,7 +983,7 @@ read_password(const asql_sa_config* sa, const char* opt, char** ptr, size_t max_
 			return false;
 		}
 	}
-	else if (strncmp(value, "secrets:", 8) == 0) {
+	else if (sa != NULL && strncmp(value, "secrets:", 8) == 0) {
 		if ((pw = password_secret(sa, opt, value)) == NULL ||
 				(pw = password_fit(opt, pw, max_len, "value from ", value)) == NULL) {
 			return false;

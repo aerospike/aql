@@ -45,10 +45,12 @@ PASSWORD_HELP = [
     "Prefixes are case-sensitive. A base64 value may be line wrapped,",
     "and one trailing newline is dropped after decoding. A 'b64:' value",
     "on the command line is as visible as a literal password.",
-    "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
-    "'file:' must be given as 'b64:' or typed at the prompt.",
+    "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
+    "'file:' or 'secrets:' must be given as 'b64:' or typed at the",
+    "prompt.",
     "The password is read only when a user is set and the auth mode is",
     "not PKI. It must be at most 63 bytes.",
+    "A value fetched with 'secrets:' is used as-is.",
     "User will be prompted on command line if -P specified and no",
     "password is given. The typed password is used as is. With no",
     "terminal, the password is read from one line of stdin and has",
@@ -66,17 +68,18 @@ TLS_KEYFILE_PASSWORD_HELP = [
     "6) String: 'PASSWORD'",
     "Prefixes are case-sensitive. A base64 value may be line wrapped,",
     "and one trailing newline is dropped after decoding.",
-    "A password that itself begins with 'env:', 'env-b64:', 'b64:' or",
-    "'file:' must be given as 'b64:'.",
+    "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
+    "'file:' or 'secrets:' must be given as 'b64:'.",
     "Surrounding whitespace is trimmed before the form is read. A",
     "password with surrounding whitespace must be given as 'b64:'.",
     "The password is read only when a key file is set. It must be at",
     "most 1024 bytes.",
+    "A value fetched with 'secrets:' is used as-is.",
     "Default: none",
     "User will be prompted on command line if --tls-keyfile-password",
     "specified and no password is given. The typed password",
-    "accepts the forms above. With no terminal, the password is read",
-    "from one line of stdin.",
+    "accepts the forms above except 'secrets:'.",
+    "With no terminal, the password is read from one line of stdin.",
 ]
 
 
@@ -102,7 +105,7 @@ def run(args, env=None, config=None, timeout=None, piped=None):
         os.environ.pop(VAR, None)
         os.environ.update(env or {})
         out = utils.run_aql(conf + args + UNREACHABLE, timeout=timeout, piped=piped)
-    return out.returncode, out.stdout.decode() + out.stderr.decode()
+    return out.returncode, out.stdout.decode(errors="replace") + out.stderr.decode(errors="replace")
 
 
 @contextlib.contextmanager
