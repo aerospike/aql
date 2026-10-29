@@ -228,7 +228,7 @@ $(JANSSON_PATH)/configure:
 
 .INTERMEDIATE: $(JANSSON_PATH)/Makefile $(JANSSON_PATH)/configure
 
-.PHONY: secret-agent-client
+.PHONY: secret-agent-client $(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a
 secret-agent-client: $(SECRET_CLIENT_PATH)/$(TARGET_LIB)/libsecret-agent-client-c.a
 
 # Static library only; its Makefile ignores our CFLAGS, so the include paths go in INC_PATH.
