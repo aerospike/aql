@@ -860,6 +860,7 @@ class SecretAgentOptionTest(unittest.TestCase):
         port, requests = self.answering_agent()
         include_dir = tempfile.mkdtemp(dir=self.dir)
         # The old buffer had no room for the NUL, and a multiple of 16 leaves no alignment padding to absorb it.
+        # Only a -fsanitize=address build traps that overflow; a normal build passes either way.
         name = "x" * ((-len(include_dir) - 1) % 16 or 16)
         write(os.path.join(include_dir, name), "[secret-agent]\nsa-port = {}\n".format(port))
         config = self.config(
@@ -869,6 +870,106 @@ class SecretAgentOptionTest(unittest.TestCase):
 
         self.assertEqual((len(include_dir) + 1 + len(name)) % 16, 0)
         self.assert_resolved_by(requests, rc, out)
+
+    def include_directory(self, files: dict[str, str]) -> str:
+        directory = tempfile.mkdtemp(dir=self.dir)
+
+        for name, content in files.items():
+            write(os.path.join(directory, name), content)
+
+        return directory
+
+    def run_with_include_directory(self, directory: str, port: str) -> tuple[int, str]:
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = {}\n[include]\ndirectory = "{}"\n'.format(port, directory)
+        )
+        return run([], config=config)
+
+    @parameterized.expand(
+        [
+            ("unknown_key", "sa-time-out = 1", "Unknown parameter `sa-time-out` in `secret-agent` section.\n"),
+            ("empty_ca_file", 'sa-ca-file = ""', config_value_error("", "sa-ca-file")),
+        ]
+    )
+    def test_bad_section_in_include_directory_fails_closed(self, _, line, error):
+        """Other bad include-directory files are skipped, but a rejected agent section stops the run, or
+        the secret would go to the earlier agent without TLS."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory({"agent.conf": "[secret-agent]\n{}\n".format(line)})
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(error, out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def assert_ca_file_applied(self, requests: list, rc: int, out: str):
+        """The CA file is missing, so the fetch fails before any request once the CA file applies, and
+        goes to the agent in plaintext when it is dropped."""
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(
+            "sa-ca-file in the [secret-agent] config section: cannot read file {}".format(self.missing), out
+        )
+
+    def test_ca_file_kept_when_include_directory_file_has_a_rejected_cluster_key(self):
+        """asbackup's use-services-alternate in a shared astools.conf skips the file in aql, but its
+        agent section still applies."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory(
+            {
+                "shared.conf": '[cluster]\nuse-services-alternate = true\n[secret-agent]\nsa-ca-file = "{}"\n'.format(
+                    self.missing
+                )
+            }
+        )
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assert_ca_file_applied(requests, rc, out)
+
+    def test_symlinked_include_directory_file_is_read(self):
+        port, requests = self.answering_agent()
+        target = self.config('[secret-agent]\nsa-ca-file = "{}"\n'.format(self.missing))
+        directory = self.include_directory({})
+        os.symlink(target, os.path.join(directory, "agent.conf"))
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assert_ca_file_applied(requests, rc, out)
+
+    def test_link_to_a_directory_is_not_followed(self):
+        """Following a link loop would read the same files again at every level, until the path holds
+        too many links and a warning is printed."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory({"agent.conf": "[secret-agent]\nsa-port = {}\n".format(port)})
+        os.symlink(directory, os.path.join(directory, "loop"))
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        rc, out = run([], config=config, timeout=30)
+
+        self.assert_resolved_by(requests, rc, out)
+        self.assertNotIn("cannot read config file", out)
+        self.assertNotIn("Skipped", out)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read any file")
+    def test_unreadable_config_file_is_reported(self):
+        port, _ = self.answering_agent()
+        directory = self.include_directory({})
+        path = os.path.join(directory, "agent.conf")
+        write(path, '[secret-agent]\nsa-ca-file = "{}"\n'.format(self.missing), mode=0o000)
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assertIn("Warning: cannot read config file {}: Permission denied\n".format(path), out)
+
+    def test_tls_keyfile_password_not_fetched_without_tls(self):
+        """The key is never used without --tls-enable, so an agent outage must not fail the run."""
+        port, requests = self.answering_agent()
+        rc, out = run(["--tls-keyfile", self.key, "--tls-keyfile-password", "secrets:aql:pw", "--sa-port", port])
+
+        self.assertEqual(requests, [])
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertIn(CONNECT_FAILED, out)
 
     def test_config_file_option_beats_home_config_file(self):
         port, requests = self.answering_agent()

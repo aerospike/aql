@@ -85,6 +85,7 @@ typedef struct asql_sa_config {
 	int timeout_ms;
 	char* cafile;
 	char* cafile_opt;
+	bool section_rejected;
 } asql_sa_config;
 
 typedef struct asql_base_config {

@@ -343,7 +343,7 @@ asql_init(asql_config* c)
 		return false;
 	}
 
-	if (c->base.tls.keyfile && c->base.tls.keyfile_pw) {
+	if (c->base.tls.enable && c->base.tls.keyfile && c->base.tls.keyfile_pw) {
 		const char* keyfile_pw_opt = c->base.tls_keyfile_pw_from_config ?
 				"tls-keyfile-password in config file" : "--tls-keyfile-password";
 		const asql_sa_config* sa = &c->base.sa;

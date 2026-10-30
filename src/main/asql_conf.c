@@ -1473,19 +1473,35 @@ config_from_dir(asql_config* c, const char* instance, char* dirname, int level)
 		sprintf(path, "%s/%s", dirname, entry->d_name);
 
 		struct stat statbuf;
-		lstat(path, &statbuf);
 
-		if (S_ISDIR(statbuf.st_mode)) {
-			if (! config_from_dir(c, instance, path, level)) {
-				// ignore file loading error inside include directory
-				fprintf(stderr, "Skipped .....\n");
-			}
+		if (lstat(path, &statbuf) != 0) {
+			continue;
+		}
 
+		// As in asadm, a link to a directory is not followed, so a link loop is not walked.
+		bool link = S_ISLNK(statbuf.st_mode);
+
+		if (link && stat(path, &statbuf) != 0) {
+			fprintf(stderr, "Warning: cannot read config file %s: %s\n", path, strerror(errno));
+			continue;
+		}
+
+		bool loaded = true;
+
+		if (S_ISDIR(statbuf.st_mode) && ! link) {
+			loaded = config_from_dir(c, instance, path, level);
 		} else if (S_ISREG(statbuf.st_mode)) {
-			if (! config_from_file(c, instance, path, level)) {
-				// ignore file loading error inside include directory
-				fprintf(stderr, "Skipped .....\n");
+			loaded = config_from_file(c, instance, path, level);
+		}
+
+		if (! loaded) {
+			if (c->base.sa.section_rejected) {
+				closedir(dp);
+				return false;
 			}
+
+			// ignore file loading error inside include directory
+			fprintf(stderr, "Skipped .....\n");
 		}
 	}
 
@@ -1563,13 +1579,14 @@ config_from_file(asql_config* c, const char* instance, const char* fname, int le
 	else if (! conftab) {
 		status = true;
 	}
+	else if (! config_secret_agent(conftab, c, instance, errbuf)) {
+		c->base.sa.section_rejected = true;
+		status = false;
+	}
 	else if (! config_cluster(conftab, c, instance, errbuf)) {
 		status = false;
 	}
 	else if (! config_aql(conftab, c, instance, errbuf)) {
-		status = false;
-	}
-	else if (! config_secret_agent(conftab, c, instance, errbuf)) {
 		status = false;
 	}
 	else if (! config_include(conftab, c, instance, level)) {
@@ -1590,6 +1607,10 @@ config_parse_file(const char* fname, toml_table_t** tab, char errbuf[])
 	FILE* fp = fopen(fname, "r");
 
 	if (! fp) {
+		if (errno != ENOENT) {
+			fprintf(stderr, "Warning: cannot read config file %s: %s\n", fname, strerror(errno));
+		}
+
 		// it ok if file is not found
 		return true;
 	}
@@ -1628,6 +1649,7 @@ config_default(asql_config* c, const char* instance)
 	c->base.sa.timeout_ms = SA_DEFAULT_TIMEOUT_MS;
 	c->base.sa.cafile = NULL;
 	c->base.sa.cafile_opt = NULL;
+	c->base.sa.section_rejected = false;
 }
 
 static bool
