@@ -1,0 +1,1716 @@
+import base64
+import errno
+import glob
+import json
+import os
+import re
+import select
+import shutil
+import socket
+import ssl
+import struct
+import subprocess
+import tempfile
+import threading
+import time
+import unittest
+import uuid
+from unittest import mock
+
+from parameterized import parameterized
+
+import utils
+from password_source_test import (
+    CONNECT_FAILED,
+    NO_USER_WARNING,
+    PARSED_LOOKING_SECRET,
+    SECRET,
+    TLS_KEY_FAILED,
+    UNREACHABLE,
+    VAR,
+    capture_login,
+    literal_login,
+    make_key,
+    run,
+    run_with_prompt,
+)
+
+AGENT_IMAGE = "aerospike/aerospike-secret-agent"
+AGENT_TAG = "1.1.0"
+AGENT_PORT = "3005/tcp"
+AGENT_DIR = "/opt/work"
+AGENT_MAGIC = 0x51DEC1CC
+
+SECRETS = {
+    "pw": SECRET,
+    "wrong": "wrong",
+    "env_looking": PARSED_LOOKING_SECRET,
+    "trailing_newline": SECRET + "\n",
+    "with_nul": "ab\0xyzzy",
+    "empty": "",
+    "longest": "p" * 63,
+    "too_long": "p" * 64,
+    "long_key": "k" * 100,
+}
+
+CAFILE_DEPRECATED = "Argument --sa-cafile is deprecated. Use --sa-ca-file instead.\n"
+
+SA_EXPECTED = {
+    "sa-address": "<host>[:<port>] or [<ipv6>][:<port>]",
+    "sa-port": "an integer from 1 to 65535",
+    "sa-timeout": "an integer from 1 to 2147483647",
+    "sa-ca-file": "a path to a CA certificate file",
+    "sa-cafile": "a path to a CA certificate file",
+}
+
+
+def config_value_error(value: str, key: str, section: str = "secret-agent") -> str:
+    return 'invalid value "{}" for {} in the [{}] config section, expected {}\n'.format(
+        value, key, section, SA_EXPECTED[key]
+    )
+
+
+def b64(value: str) -> str:
+    return base64.b64encode(value.encode()).decode()
+
+
+def agent_response(value: str) -> bytes:
+    return json.dumps({"SecretValue": b64(value)}).encode()
+
+
+def closed_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def fake_agent(test, response: bytes | None, requests: list | None = None, host: str = "127.0.0.1") -> str:
+    """Answers one request with response, or never answers when response is None. Each request
+    received is added to requests."""
+    family, _, _, _, addr = socket.getaddrinfo(host, 0, type=socket.SOCK_STREAM)[0]
+    srv = socket.socket(family)
+    srv.bind(addr)
+    srv.listen(1)
+    done = threading.Event()
+
+    def serve():
+        try:
+            conn, _ = srv.accept()
+        except OSError:
+            return
+        with conn:
+            request = conn.recv(4096)
+            if requests is not None:
+                requests.append(request)
+            if response is not None:
+                conn.sendall(struct.pack(">II", AGENT_MAGIC, len(response)) + response)
+            done.wait(10)
+
+    def stop():
+        done.set()
+        try:
+            srv.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        srv.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    test.addCleanup(stop)
+    return str(srv.getsockname()[1])
+
+
+def blackhole(test) -> tuple[str, str] | None:
+    """An address whose connects hang, found the way the library tests do.
+
+    A full listen backlog drops new connects on Linux; macOS resets them instead, so fall back to
+    addresses that usually drop the SYN.
+    """
+
+    def probe(addr: str, port: int) -> int:
+        s = socket.socket()
+        s.setblocking(False)
+        test.addCleanup(s.close)
+        if s.connect_ex((addr, port)) not in (0, errno.EINPROGRESS, errno.EWOULDBLOCK):
+            return -1
+        _, writable, _ = select.select([], [s], [], 0.2)
+        if not writable:
+            return 0
+        return 1 if s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR) == 0 else -1
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(0)
+    test.addCleanup(srv.close)
+    port = srv.getsockname()[1]
+
+    for _ in range(64):
+        rv = probe("127.0.0.1", port)
+        if rv == 0:
+            return "127.0.0.1", str(port)
+        if rv < 0:
+            break
+
+    for addr in ("127.0.0.2", "192.0.2.1"):
+        if probe(addr, 3005) == 0:
+            return addr, "3005"
+    return None
+
+
+def loopback_link_local() -> str | None:
+    """fe80::1 with the zone of the interface that has it, which on macOS is the loopback."""
+    for _, name in socket.if_nameindex():
+        host = "fe80::1%" + name
+        try:
+            with socket.socket(socket.AF_INET6) as s:
+                s.bind(socket.getaddrinfo(host, 0, socket.AF_INET6)[0][4])
+            return host
+        except OSError:
+            continue
+    return None
+
+
+def write(path: str, content: str, mode: int = 0o644):
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, mode)
+
+
+def openssl(dir: str, *args: str):
+    subprocess.run(["openssl", *args], cwd=dir, check=True, capture_output=True)
+
+
+def make_ca(dir: str, name: str) -> str:
+    """A throwaway CA, built like the library's src/test/gen-certs.sh."""
+    write(os.path.join(dir, name + ".ext"), "basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n")
+    openssl(dir, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
+            "-keyout", name + "-key.pem", "-out", name + ".csr")
+    openssl(dir, "x509", "-req", "-days", "2", "-in", name + ".csr", "-signkey", name + "-key.pem",
+            "-extfile", name + ".ext", "-out", name + ".pem")
+    return os.path.join(dir, name + ".pem")
+
+
+def make_leaf(dir: str, name: str, ca: str, san: str) -> tuple[str, str]:
+    """An agent certificate issued by ca for the given subject alternative names."""
+    ca_name = os.path.basename(ca)[:-len(".pem")]
+    write(os.path.join(dir, name + ".ext"),
+          "basicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName={}\n".format(san))
+    openssl(dir, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
+            "-keyout", name + "-key.pem", "-out", name + ".csr")
+    openssl(dir, "x509", "-req", "-days", "2", "-in", name + ".csr", "-CA", ca_name + ".pem",
+            "-CAkey", ca_name + "-key.pem", "-CAcreateserial", "-extfile", name + ".ext", "-out", name + ".pem")
+    os.chmod(os.path.join(dir, name + "-key.pem"), 0o644)
+    return os.path.join(dir, name + ".pem"), os.path.join(dir, name + "-key.pem")
+
+
+def wait_for_agent(container, port: int, cafile: str | None, timeout: float = 60):
+    # A bare TCP connect is not enough: the docker port proxy accepts before the agent listens.
+    body = json.dumps({"Resource": "aql", "SecretKey": "probe"}).encode()
+    request = struct.pack(">II", AGENT_MAGIC, len(body)) + body
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
+                conn = raw
+                if cafile:
+                    ctx = ssl.create_default_context(cafile=cafile)
+                    ctx.check_hostname = False
+                    conn = ctx.wrap_socket(raw)
+                conn.sendall(request)
+                header = conn.recv(8)
+                if len(header) == 8 and struct.unpack(">I", header[:4])[0] == AGENT_MAGIC:
+                    return
+        except (OSError, ssl.SSLError):
+            pass
+        time.sleep(0.2)
+
+    raise RuntimeError(
+        "secret agent not ready on port {}:\n{}".format(port, container.logs().decode(errors="replace"))
+    )
+
+
+def start_agent(test_cls, dir: str, name: str, tls: tuple[str, str] | None, cafile: str | None = None) -> int:
+    tls_conf = ""
+    if tls:
+        tls_conf = '    tls:\n      cert-file: "{0}/{1}"\n      key-file: "{0}/{2}"\n'.format(
+            AGENT_DIR, os.path.basename(tls[0]), os.path.basename(tls[1])
+        )
+
+    config = "{}.yaml".format(name)
+    write(
+        os.path.join(dir, config),
+        "service:\n"
+        "  tcp:\n"
+        "    endpoint: 0.0.0.0:3005\n"
+        "{tls}"
+        "secret-manager:\n"
+        "  file:\n"
+        "    resources:\n"
+        '      aql: "{dir}/secrets.json"\n'
+        '      other: "{dir}/other.json"\n'
+        "log:\n"
+        "  level: debug\n".format(tls=tls_conf, dir=AGENT_DIR),
+    )
+
+    client = utils._get_docker_client()
+    container = client.containers.run(
+        "{}:{}".format(AGENT_IMAGE, AGENT_TAG),
+        command="--config-file {}/{}".format(AGENT_DIR, config),
+        name="aql-test-secret-agent-{}-{}".format(name, uuid.uuid4().hex[:12]),
+        ports={AGENT_PORT: ("127.0.0.1", None)},
+        volumes={dir: {"bind": AGENT_DIR, "mode": "ro"}},
+        platform="linux/amd64",
+        detach=True,
+    )
+    test_cls.addClassCleanup(container.remove, force=True)
+
+    deadline = time.time() + 30
+    while True:
+        container.reload()
+        bindings = (container.attrs["NetworkSettings"]["Ports"] or {}).get(AGENT_PORT)
+        if bindings:
+            port = int(bindings[0]["HostPort"])
+            break
+        if time.time() > deadline:
+            raise RuntimeError("secret agent container {} has no port binding".format(container.name))
+        time.sleep(0.2)
+
+    wait_for_agent(container, port, cafile)
+    return port
+
+
+class SecretAgentOptionTest(unittest.TestCase):
+    """No secret agent and no server needed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.dir)
+        cls.closed = str(closed_port())
+        cls.missing = os.path.join(cls.dir, "missing.pem")
+        cls.key = os.path.join(cls.dir, "key.pem")
+        make_key(cls.key, SECRET)
+        cls.longest_password_key = os.path.join(cls.dir, "longest-key.pem")
+        make_key(cls.longest_password_key, "k" * 1024)
+
+    def config(self, content: str) -> str:
+        path = os.path.join(self.dir, "astools-{}.conf".format(uuid.uuid4().hex))
+        write(path, content)
+        return path
+
+    def answering_agent(self, value: str = SECRET, host: str = "127.0.0.1") -> tuple[str, list]:
+        requests = []
+        return fake_agent(self, agent_response(value), requests, host), requests
+
+    def assert_resolved_by(self, requests: list, rc: int, out: str):
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(len(requests), 1, out)
+        self.assertNotIn("--password:", out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("password", ["-U", "admin", "-P", "secrets:aql:pw"], "--password"),
+            (
+                "tls_keyfile_password",
+                ["--tls-enable", "--tls-keyfile", "/dev/null", "--tls-keyfile-password", "secrets:aql:pw"],
+                "--tls-keyfile-password",
+            ),
+        ]
+    )
+    def test_agent_unreachable(self, _, args, opt):
+        rc, out = run(args + ["--sa-port", self.closed])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(opt + ": secret agent request for secrets:aql:pw failed: connection or protocol error\n", out)
+        self.assertIn("secret-agent: ERR: connect failed", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_agent_unreachable_shows_reason(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.closed])
+
+        self.assertNotEqual(rc, 0)
+        self.assertRegex(out, r"secret-agent: ERR: connect failed[^\n]* \(Connection refused\)\n")
+
+    @parameterized.expand(
+        [
+            ("bracketed_ipv6", ["--sa-address", "[::1]", "--sa-port", "{closed}"]),
+            ("bracketed_ipv6_port", ["--sa-address", "[::1]:{closed}"]),
+            ("bare_ipv6", ["--sa-address", "::1", "--sa-port", "{closed}"]),
+            ("host_port", ["--sa-address", "localhost:{closed}"]),
+        ]
+    )
+    def test_address_forms_parse(self, _, sa_args):
+        sa_args = [a.format(closed=self.closed) for a in sa_args]
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"] + sa_args)
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("invalid value", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: connection or protocol error\n", out)
+
+    @parameterized.expand(
+        [
+            ("timeout_text", "--sa-timeout", "abc"),
+            ("timeout_zero", "--sa-timeout", "0"),
+            ("timeout_negative", "--sa-timeout", "-1"),
+            ("timeout_too_big", "--sa-timeout", "2147483648"),
+            ("timeout_plus_sign", "--sa-timeout", "+5"),
+            ("timeout_leading_space", "--sa-timeout", " 5"),
+            ("timeout_non_ascii_digits", "--sa-timeout", "５"),
+            ("port_zero", "--sa-port", "0"),
+            ("port_too_big", "--sa-port", "65536"),
+            ("port_text", "--sa-port", "http"),
+            ("address_empty", "--sa-address", ""),
+            ("address_no_host", "--sa-address", ":3005"),
+            ("address_empty_port", "--sa-address", "host:"),
+            ("address_bad_port", "--sa-address", "host:99999"),
+            ("address_unclosed_bracket", "--sa-address", "[::1"),
+            ("address_empty_brackets", "--sa-address", "[]:3005"),
+            ("address_junk_after_bracket", "--sa-address", "[::1]x"),
+            ("address_extra_colon", "--sa-address", "host:3005:x"),
+            ("address_ipv4_extra_colon", "--sa-address", "10.0.0.1:3005:1"),
+            ("address_bad_ipv6", "--sa-address", "1::2::3"),
+            ("address_bad_ipv6_zone", "--sa-address", "1::2::3%lo0"),
+            ("address_empty_zone", "--sa-address", "fe80::1%"),
+            ("address_bracketed_not_ipv6", "--sa-address", "[host:3005:x]"),
+            ("address_bracketed_not_ipv6_port", "--sa-address", "[host:3005:x]:3005"),
+            ("address_bracketed_one_colon", "--sa-address", "[a:b]"),
+            ("address_bracketed_empty_zone", "--sa-address", "[fe80::1%]:3005"),
+            ("address_bracketed_hostname", "--sa-address", "[localhost]"),
+            ("address_bracketed_hostname_port", "--sa-address", "[localhost]:3005"),
+            ("address_bracketed_ipv4", "--sa-address", "[127.0.0.1]"),
+            ("address_bracketed_ipv4_port", "--sa-address", "[127.0.0.1]:3005"),
+            ("address_bracketed_hostname_zone", "--sa-address", "[host%lo0]"),
+        ]
+    )
+    def test_bad_option(self, _, opt, value):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", opt, value])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn('{}: invalid value "{}", expected {}\n'.format(opt, value, SA_EXPECTED[opt[2:]]), out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("min", "1"), ("max", "2147483647")])
+    def test_timeout_bounds_accepted(self, _, value):
+        rc, out = run(["-U", "admin", "-P", "literal", "--sa-timeout", value])
+        self.assertNotIn("invalid value", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+        config = self.config("[secret-agent]\nsa-timeout = {}\n".format(value))
+        rc, out = run(["-U", "admin", "-P", "literal"], config=config)
+        self.assertNotIn("invalid value", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("short", 200, None, 0.8), ("long", 2000, 1.9, None)])
+    def test_config_timeout_as_digit_string(self, _, timeout_ms, at_least, under):
+        port = fake_agent(self, None)
+        config = self.config('[secret-agent]\nsa-port = {}\nsa-timeout = "{}"\n'.format(port, timeout_ms))
+
+        start = time.monotonic()
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+        elapsed = time.monotonic() - start
+
+        self.assertNotIn("invalid value", out)
+        self.assertIn("secret-agent: ERR: socket poll timed out\n", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
+        if at_least is not None:
+            self.assertGreaterEqual(elapsed, at_least)
+        if under is not None:
+            self.assertLess(elapsed, under)
+
+    @parameterized.expand(
+        [
+            ("zero", '"0"'),
+            ("negative", '"-1"'),
+            ("plus_sign", '"+1000"'),
+            ("leading_space", '" 1000"'),
+            ("trailing_space", '"1000 "'),
+            ("empty", '""'),
+            ("too_big", '"2147483648"'),
+            ("huge", '"99999999999999999999"'),
+            ("exponent", '"1e3"'),
+            ("unit", '"1000ms"'),
+            ("non_ascii_digits", '"１０００"'),
+        ]
+    )
+    def test_bad_config_timeout_string(self, _, value):
+        config = self.config("[secret-agent]\nsa-timeout = {}\n".format(value))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(config_value_error(value[1:-1], "sa-timeout"), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("integer", "{}"), ("string", '"{}"')])
+    def test_config_port_forms(self, _, form):
+        port, requests = self.answering_agent()
+        config = self.config("[secret-agent]\nsa-port = {}\n".format(form.format(port)))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_resolved_by(requests, rc, out)
+
+    # The library default is 1000 ms. Without the setting both cases take about 1 s and fail.
+    @parameterized.expand(
+        [
+            ("command_line_short", False, 200, None, 0.8),
+            ("command_line_long", False, 2000, 1.9, None),
+            ("config_file_short", True, 200, None, 0.8),
+            ("config_file_long", True, 2000, 1.9, None),
+        ]
+    )
+    def test_timeout(self, _, from_config, timeout_ms, at_least, under):
+        port = fake_agent(self, None)
+        args = ["-U", "admin", "-P", "secrets:aql:pw"]
+        config = None
+
+        if from_config:
+            config = self.config("[secret-agent]\nsa-port = {}\nsa-timeout = {}\n".format(port, timeout_ms))
+        else:
+            args += ["--sa-port", port, "--sa-timeout", str(timeout_ms)]
+
+        start = time.monotonic()
+        rc, out = run(args, config=config)
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: socket poll timed out\n", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        if at_least is not None:
+            self.assertGreaterEqual(elapsed, at_least)
+        if under is not None:
+            self.assertLess(elapsed, under)
+
+    # The library default is 1000 ms, so the long case also proves the setting reaches the connect.
+    @parameterized.expand([("short", 300, None, 1.2), ("long", 2500, 2.4, 4.0)])
+    def test_connect_timeout(self, _, timeout_ms, at_least, under):
+        target = blackhole(self)
+        if target is None:
+            self.skipTest("no address here leaves a connect pending")
+
+        start = time.monotonic()
+        rc, out = run(
+            [
+                "-U", "admin", "-P", "secrets:aql:pw", "--sa-address", target[0], "--sa-port", target[1],
+                "--sa-timeout", str(timeout_ms),
+            ]
+        )
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: connect timed out\n", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        if at_least is not None:
+            self.assertGreaterEqual(elapsed, at_least)
+        self.assertLess(elapsed, under)
+
+    # TEST-NET-1 is either blackholed or unreachable, depending on the network.
+    def test_unroutable_agent_is_bounded(self):
+        start = time.monotonic()
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", "192.0.2.1", "--sa-timeout", "300"])
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertRegex(out, r"--password: secret agent request for secrets:aql:pw failed: "
+                              r"(timed out|connection or protocol error)\n")
+        self.assertLess(elapsed, 1.2)
+
+    def test_malformed_response_is_not_echoed(self):
+        port = fake_agent(self, '{{"SecretValue":"{}'.format(b64(SECRET)).encode())
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", port])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: failed to parse response JSON line\n", out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: bad request\n", out)
+        self.assertNotIn(b64(SECRET)[:4], out)
+        self.assertNotIn(SECRET, out)
+
+    # A literal password never contacts the agent, so reaching the server proves the address parsed.
+    @parameterized.expand(
+        [
+            ("zone", "fe80::1%lo0"),
+            ("numeric_zone", "fe80::1%1"),
+            ("bracketed_zone", "[fe80::1%lo0]"),
+            ("bracketed_zone_port", "[fe80::1%lo0]:3005"),
+            ("bracketed_port", "[::1]:3005"),
+            ("ipv4_mapped", "::ffff:127.0.0.1"),
+        ]
+    )
+    def test_ipv6_address_accepted(self, _, value):
+        rc, out = run(["-U", "admin", "-P", "literal", "--sa-address", value])
+        self.assertNotIn("invalid value", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+        config = self.config('[secret-agent]\nsa-address = "{}"\n'.format(value))
+        rc, out = run(["-U", "admin", "-P", "literal"], config=config)
+        self.assertNotIn("invalid value", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_unreadable_cafile(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-cafile", self.missing, "--sa-port", self.closed])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--sa-cafile: cannot read file {}: No such file or directory\n".format(self.missing), out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_cafile_only_read_when_secrets_used(self):
+        rc, out = run(["-U", "admin", "-P", "literal", "--sa-cafile", self.missing])
+
+        self.assertNotIn("cannot read file", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_unreadable_ca_file(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-ca-file", self.missing, "--sa-port", self.closed])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--sa-ca-file: cannot read file {}: No such file or directory\n".format(self.missing), out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("command_line_ca_file", ["--sa-ca-file", "{missing}"], None),
+            ("config_ca_file", [], 'sa-ca-file = "{missing}"'),
+            ("config_cafile", [], 'sa-cafile = "{missing}"'),
+        ]
+    )
+    def test_ca_file_only_read_when_secrets_used(self, _, args, line):
+        config = self.config("[secret-agent]\n{}\n".format(line.format(missing=self.missing))) if line else None
+        rc, out = run(["-U", "admin", "-P", "literal"] + [a.format(missing=self.missing) for a in args], config=config)
+
+        self.assertNotIn("Unknown parameter", out)
+        self.assertNotIn("cannot read file", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_cafile_option_is_deprecated(self):
+        rc, out = run(["-U", "admin", "-P", "literal", "--sa-cafile", self.missing])
+
+        self.assertIn(CAFILE_DEPRECATED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_ca_file_option_is_not_deprecated(self):
+        rc, out = run(["-U", "admin", "-P", "literal", "--sa-ca-file", self.missing])
+
+        self.assertNotIn("deprecated", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_config_cafile_key_is_not_deprecated(self):
+        config = self.config('[secret-agent]\nsa-cafile = "{}"\n'.format(self.missing))
+        rc, out = run(["-U", "admin", "-P", "literal"], config=config)
+
+        self.assertNotIn("deprecated", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand([("ca_file_first", True), ("cafile_first", False)])
+    def test_ca_file_option_beats_cafile_option(self, _, ca_file_first):
+        used = os.path.join(self.dir, "ca-file-option.pem")
+        ignored = os.path.join(self.dir, "cafile-option.pem")
+        options = [["--sa-ca-file", used], ["--sa-cafile", ignored]]
+        if not ca_file_first:
+            options.reverse()
+
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.closed] + options[0] + options[1])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--sa-ca-file: cannot read file {}: No such file or directory\n".format(used), out)
+        self.assertNotIn(ignored, out)
+
+    @parameterized.expand([("ca_file_first", True), ("cafile_first", False)])
+    def test_config_ca_file_key_beats_cafile_key(self, _, ca_file_first):
+        used = os.path.join(self.dir, "ca-file-key.pem")
+        ignored = os.path.join(self.dir, "cafile-key.pem")
+        lines = ['sa-ca-file = "{}"'.format(used), 'sa-cafile = "{}"'.format(ignored)]
+        if not ca_file_first:
+            lines.reverse()
+
+        config = self.config("[secret-agent]\nsa-port = {}\n{}\n".format(self.closed, "\n".join(lines)))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(
+            "sa-ca-file in the [secret-agent] config section: cannot read file {}: No such file or directory\n".format(used),
+            out,
+        )
+        self.assertNotIn(ignored, out)
+
+    @parameterized.expand(
+        [
+            ("ca_file", "sa-ca-file", "secret-agent", []),
+            ("cafile", "sa-cafile", "secret-agent", []),
+            ("instance_ca_file", "sa-ca-file", "secret-agent_a", ["--instance", "a"]),
+            ("instance_cafile", "sa-cafile", "secret-agent_a", ["--instance", "a"]),
+        ]
+    )
+    def test_config_unreadable_ca_file_names_key(self, _, key, section, args):
+        config = self.config('[{}]\nsa-port = {}\n{} = "{}"\n'.format(section, self.closed, key, self.missing))
+        rc, out = run(args + ["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(
+            "{} in the [{}] config section: cannot read file {}: No such file or directory\n".format(
+                key, section, self.missing
+            ),
+            out,
+        )
+        self.assertNotIn("--sa-cafile", out)
+        self.assertNotIn("secret-agent:", out)
+
+    @parameterized.expand(
+        [
+            ("ca_file_over_cafile_key", "--sa-ca-file", "sa-cafile"),
+            ("ca_file_over_ca_file_key", "--sa-ca-file", "sa-ca-file"),
+            ("cafile_over_ca_file_key", "--sa-cafile", "sa-ca-file"),
+            ("cafile_over_cafile_key", "--sa-cafile", "sa-cafile"),
+        ]
+    )
+    def test_command_line_ca_file_beats_config_file(self, _, opt, key):
+        from_command_line = os.path.join(self.dir, "from-command-line.pem")
+        from_config = os.path.join(self.dir, "from-config.pem")
+        config = self.config('[secret-agent]\nsa-port = {}\n{} = "{}"\n'.format(self.closed, key, from_config))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", opt, from_command_line], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("{}: cannot read file {}: No such file or directory\n".format(opt, from_command_line), out)
+        self.assertNotIn(from_config, out)
+
+    @parameterized.expand(
+        [
+            (name + "_" + password_name, args, content, error, password)
+            for name, args, content, error in [
+                (
+                    "command_line_ca_file", ["--sa-ca-file", ""], None,
+                    '--sa-ca-file: invalid value "", expected a path to a CA certificate file\n',
+                ),
+                (
+                    "command_line_cafile", ["--sa-cafile", ""], None,
+                    '--sa-cafile: invalid value "", expected a path to a CA certificate file\n',
+                ),
+                ("config_ca_file", [], '[secret-agent]\nsa-ca-file = ""\n', config_value_error("", "sa-ca-file")),
+                ("config_cafile", [], '[secret-agent]\nsa-cafile = ""\n', config_value_error("", "sa-cafile")),
+                (
+                    "instance_config_ca_file", ["--instance", "a"], '[secret-agent_a]\nsa-ca-file = ""\n',
+                    config_value_error("", "sa-ca-file", "secret-agent_a"),
+                ),
+            ]
+            for password_name, password in [("secret", "secrets:aql:pw"), ("literal", "literal")]
+        ]
+    )
+    def test_empty_ca_file_path(self, _, args, content, error, password):
+        port, requests = self.answering_agent()
+        config = self.config(content) if content else None
+        rc, out = run(["-U", "admin", "-P", password, "--sa-port", port] + args, config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(error, out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("command_line", ["-P", "secrets:aql:pw", "--sa-port", "{port}"], None, "--password"),
+            (
+                "config_file",
+                [],
+                '[cluster]\npassword = "secrets:aql:pw"\n[secret-agent]\nsa-port = {port}\n',
+                "password in config file",
+            ),
+        ]
+    )
+    def test_secrets_without_user_warns(self, _, args, content, opt):
+        port, requests = self.answering_agent()
+        config = self.config(content.format(port=port)) if content else None
+        rc, out = run([a.format(port=port) for a in args], config=config)
+
+        self.assertIn(NO_USER_WARNING.format(opt), out)
+        self.assertEqual(requests, [])
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            (opt + "_" + how, opt, how)
+            for opt in ["password", "tls_keyfile_password"]
+            for how in ["typed", "piped"]
+        ]
+    )
+    def test_prompted_secrets_value_is_literal(self, _, opt, how):
+        port, requests = self.answering_agent()
+
+        if opt == "password":
+            args, prompt, failed = ["-U", "admin", "-P"], "Enter Password: ", CONNECT_FAILED
+        else:
+            args = ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password"]
+            prompt, failed = "Enter TLS-Keyfile Password: ", TLS_KEY_FAILED
+
+        args += ["--sa-port", port]
+
+        if how == "typed":
+            out = run_with_prompt(args, "secrets:aql:pw")
+        else:
+            rc, out = run(args, piped="secrets:aql:pw\n")
+
+        self.assertIn(prompt, out)
+        self.assertEqual(requests, [])
+        self.assertNotIn("secret-agent:", out)
+        self.assertIn(failed, out)
+
+    def longest_key_args(self, port: str) -> list[str]:
+        return [
+            "--tls-enable", "--tls-keyfile", self.longest_password_key,
+            "--tls-keyfile-password", "secrets:aql:pw", "--sa-port", port,
+        ]
+
+    def test_fetched_tls_keyfile_password_at_limit_loads_key(self):
+        port, requests = self.answering_agent("k" * 1024)
+        rc, out = run(self.longest_key_args(port))
+
+        self.assertEqual(len(requests), 1)
+        self.assertNotIn("longer than", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_fetched_tls_keyfile_password_over_limit_is_rejected(self):
+        port, requests = self.answering_agent("k" * 1025)
+        rc, out = run(self.longest_key_args(port))
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(len(requests), 1)
+        self.assertIn("--tls-keyfile-password: value from secrets:aql:pw is longer than 1024 bytes\n", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("k" * 1025, out)
+
+    @parameterized.expand([("parsed_looking", "env:" + VAR), ("padded", " " + SECRET + " \t")])
+    def test_fetched_value_is_used_as_is(self, _, value):
+        port, requests = self.answering_agent(value)
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", port], {VAR: SECRET})
+
+        self.assertEqual(len(requests), 1)
+        self.assertNotEqual(login, literal_login(SECRET))
+        self.assertEqual(login, capture_login(["-U", "admin", "-P", "b64:" + b64(value)]))
+
+    @parameterized.expand(
+        [
+            ("user", ["-U", "secrets:aql:pw", "-P", "literal"], None),
+            ("auth", ["-U", "admin", "-P", "literal", "--auth", "secrets:aql:pw"], None),
+            ("tls_name", ["--tls-enable", "--tls-name", "secrets:aql:pw"], None),
+            ("tls_cafile", ["--tls-enable", "--tls-cafile", "secrets:aql:pw"], None),
+            ("tls_certfile", ["--tls-enable", "--tls-certfile", "secrets:aql:pw"], None),
+            ("tls_keyfile", ["--tls-enable", "--tls-keyfile", "secrets:aql:pw"], None),
+            ("config_user", [], '[cluster]\nuser = "secrets:aql:pw"\npassword = "literal"\n'),
+        ]
+    )
+    def test_only_password_options_are_fetched(self, _, args, content):
+        port, requests = self.answering_agent()
+        config = self.config(content) if content else None
+        rc, out = run(args + ["--sa-port", port], config=config)
+
+        self.assertEqual(requests, [])
+        self.assertNotIn("secret-agent:", out)
+
+    def test_instance_section_drops_default_section_keys(self):
+        port, requests = self.answering_agent()
+        config = self.config(
+            '[secret-agent]\nsa-address = "127.0.0.2:{}"\nsa-timeout = 1\nsa-cafile = "{}"\n'
+            "[secret-agent_a]\nsa-port = {}\n".format(self.closed, self.missing, port)
+        )
+        rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_resolved_by(requests, rc, out)
+
+    @parameterized.expand(
+        [
+            ("port", "sa-port = {closed}", ["--sa-port", "{port}"]),
+            ("address", 'sa-address = "127.0.0.1:{closed}"', ["--sa-address", "127.0.0.1:{port}"]),
+            ("address_port_over_port", "sa-port = {closed}", ["--sa-address", "127.0.0.1:{port}"]),
+        ]
+    )
+    def test_command_line_beats_config_file(self, _, line, args):
+        port, requests = self.answering_agent()
+        config = self.config("[secret-agent]\n{}\n".format(line.format(closed=self.closed)))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"] + [a.format(port=port) for a in args], config=config)
+
+        self.assert_resolved_by(requests, rc, out)
+
+    def test_command_line_timeout_beats_config_file(self):
+        port = fake_agent(self, None)
+        config = self.config("[secret-agent]\nsa-port = {}\nsa-timeout = 5000\n".format(port))
+
+        start = time.monotonic()
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-timeout", "200"], config=config)
+        elapsed = time.monotonic() - start
+
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: timed out\n", out)
+        self.assertLess(elapsed, 2)
+
+    def test_included_file_beats_including_file(self):
+        port, requests = self.answering_agent()
+        included = self.config("[secret-agent]\nsa-port = {}\n".format(port))
+        config = self.config('[include]\nfile = "{}"\n[secret-agent]\nsa-port = {}\n'.format(included, self.closed))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_resolved_by(requests, rc, out)
+
+    def test_include_directory_file_with_path_length_multiple_of_16(self):
+        port, requests = self.answering_agent()
+        include_dir = tempfile.mkdtemp(dir=self.dir)
+        # The old buffer had no room for the NUL, and a multiple of 16 leaves no alignment padding to absorb it.
+        # Only a -fsanitize=address build traps that overflow; a normal build passes either way.
+        name = "x" * ((-len(include_dir) - 1) % 16 or 16)
+        write(os.path.join(include_dir, name), "[secret-agent]\nsa-port = {}\n".format(port))
+        config = self.config(
+            '[secret-agent]\nsa-port = {}\n[include]\ndirectory = "{}"\n'.format(self.closed, include_dir)
+        )
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertEqual((len(include_dir) + 1 + len(name)) % 16, 0)
+        self.assert_resolved_by(requests, rc, out)
+
+    def include_directory(self, files: dict[str, str]) -> str:
+        directory = tempfile.mkdtemp(dir=self.dir)
+
+        for name, content in files.items():
+            write(os.path.join(directory, name), content)
+
+        return directory
+
+    def run_with_include_directory(self, directory: str, port: str) -> tuple[int, str]:
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = {}\n[include]\ndirectory = "{}"\n'.format(port, directory)
+        )
+        return run([], config=config)
+
+    @parameterized.expand(
+        [
+            ("unknown_key", "sa-time-out = 1", "Unknown parameter `sa-time-out` in `secret-agent` section.\n"),
+            ("empty_ca_file", 'sa-ca-file = ""', config_value_error("", "sa-ca-file")),
+        ]
+    )
+    def test_bad_section_in_include_directory_fails_closed(self, _, line, error):
+        """Other bad include-directory files are skipped, but a rejected agent section stops the run, or
+        the secret would go to the earlier agent without TLS."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory({"agent.conf": "[secret-agent]\n{}\n".format(line)})
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(error, out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def assert_ca_file_applied(self, requests: list, rc: int, out: str):
+        """The CA file is missing, so the fetch fails before any request once the CA file applies, and
+        goes to the agent in plaintext when it is dropped."""
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(
+            "sa-ca-file in the [secret-agent] config section: cannot read file {}".format(self.missing), out
+        )
+
+    def test_ca_file_kept_when_include_directory_file_has_a_rejected_cluster_key(self):
+        """asbackup's use-services-alternate in a shared astools.conf skips the file in aql, but its
+        agent section still applies."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory(
+            {
+                "shared.conf": '[cluster]\nuse-services-alternate = true\n[secret-agent]\nsa-ca-file = "{}"\n'.format(
+                    self.missing
+                )
+            }
+        )
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assert_ca_file_applied(requests, rc, out)
+
+    def test_symlinked_include_directory_file_is_read(self):
+        port, requests = self.answering_agent()
+        target = self.config('[secret-agent]\nsa-ca-file = "{}"\n'.format(self.missing))
+        directory = self.include_directory({})
+        os.symlink(target, os.path.join(directory, "agent.conf"))
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assert_ca_file_applied(requests, rc, out)
+
+    def test_link_to_a_directory_is_not_followed(self):
+        """Following a link loop would read the same files again at every level, until the path holds
+        too many links and a warning is printed."""
+        port, requests = self.answering_agent()
+        directory = self.include_directory({"agent.conf": "[secret-agent]\nsa-port = {}\n".format(port)})
+        os.symlink(directory, os.path.join(directory, "loop"))
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        rc, out = run([], config=config, timeout=30)
+
+        self.assert_resolved_by(requests, rc, out)
+        self.assertNotIn("cannot read config file", out)
+        self.assertNotIn("Skipped", out)
+
+    def run_with_home(self, args: list[str]) -> str:
+        with mock.patch.dict(os.environ, {"HOME": self.dir}):
+            out = utils.run_aql(args + ["-U", "admin", "-P", "literal"] + UNREACHABLE)
+
+        return out.stdout.decode(errors="replace") + out.stderr.decode(errors="replace")
+
+    @parameterized.expand([("config_file", "--config-file"), ("only_config_file", "--only-config-file")])
+    def test_missing_named_config_file_is_reported(self, _, opt):
+        """The file the user named may have held the agent's CA file, so it is not skipped silently."""
+        missing = os.path.join(self.dir, "missing.conf")
+        out = self.run_with_home([opt, missing])
+
+        self.assertIn("Warning: cannot read config file {}: No such file or directory\n".format(missing), out)
+
+    def test_missing_default_config_file_is_not_reported(self):
+        out = self.run_with_home(["--config-file", self.config("")])
+
+        self.assertNotIn("cannot read config file", out)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read any file")
+    def test_unreadable_config_file_is_reported(self):
+        port, _ = self.answering_agent()
+        directory = self.include_directory({})
+        path = os.path.join(directory, "agent.conf")
+        write(path, '[secret-agent]\nsa-ca-file = "{}"\n'.format(self.missing), mode=0o000)
+        rc, out = self.run_with_include_directory(directory, port)
+
+        self.assertIn("Warning: cannot read config file {}: Permission denied\n".format(path), out)
+
+    def test_tls_keyfile_password_not_fetched_without_tls(self):
+        """The key is never used without --tls-enable, so an agent outage must not fail the run."""
+        port, requests = self.answering_agent()
+        rc, out = run(["--tls-keyfile", self.key, "--tls-keyfile-password", "secrets:aql:pw", "--sa-port", port])
+
+        self.assertEqual(requests, [])
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_config_file_option_beats_home_config_file(self):
+        port, requests = self.answering_agent()
+        home = tempfile.mkdtemp(dir=self.dir)
+        os.mkdir(os.path.join(home, ".aerospike"))
+        write(os.path.join(home, ".aerospike", "astools.conf"), "[secret-agent]\nsa-port = {}\n".format(self.closed))
+        later = self.config("[secret-agent]\nsa-port = {}\n".format(port))
+
+        with mock.patch.dict(os.environ, {"HOME": home}):
+            out = utils.run_aql(["--config-file", later, "-U", "admin", "-P", "secrets:aql:pw"] + UNREACHABLE)
+
+        self.assert_resolved_by(requests, out.returncode, out.stdout.decode() + out.stderr.decode())
+
+    @parameterized.expand(
+        [
+            ("command_line_port_last", None, ["--sa-address", "127.0.0.1:{closed}", "--sa-port", "{port}"]),
+            ("command_line_port_first", None, ["--sa-port", "{port}", "--sa-address", "127.0.0.1:{closed}"]),
+            ("config_port_last", 'sa-address = "127.0.0.1:{closed}"\nsa-port = {port}', []),
+            ("config_port_first", 'sa-port = {port}\nsa-address = "127.0.0.1:{closed}"', []),
+        ]
+    )
+    def test_explicit_port_beats_address_port(self, _, lines, args):
+        port, requests = self.answering_agent()
+        config = self.config("[secret-agent]\n{}\n".format(lines.format(port=port, closed=self.closed))) if lines else None
+        rc, out = run(
+            ["-U", "admin", "-P", "secrets:aql:pw"] + [a.format(port=port, closed=self.closed) for a in args], config=config
+        )
+
+        self.assert_resolved_by(requests, rc, out)
+
+    @parameterized.expand(
+        [
+            ("bracketed_port", False, "[{host}]:{port}", None),
+            ("bracketed", False, "[{host}]", "{port}"),
+            ("bare", False, "{host}", "{port}"),
+            ("zone_bracketed_port", True, "[{host}]:{port}", None),
+            ("zone_bare", True, "{host}", "{port}"),
+        ]
+    )
+    def test_ipv6_agent_is_reached(self, _, zone, address, sa_port):
+        host = loopback_link_local() if zone else "::1"
+        if host is None:
+            self.skipTest("no interface here has fe80::1")
+
+        for from_config in (False, True):
+            port, requests = self.answering_agent(host=host)
+            values = {"address": address.format(host=host, port=port), "port": sa_port and sa_port.format(port=port)}
+
+            if from_config:
+                config = self.config(
+                    '[secret-agent]\nsa-address = "{}"\n'.format(values["address"])
+                    + ("sa-port = {}\n".format(values["port"]) if values["port"] else "")
+                )
+                rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+            else:
+                rc, out = run(
+                    ["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", values["address"]]
+                    + (["--sa-port", values["port"]] if values["port"] else [])
+                )
+
+            self.assert_resolved_by(requests, rc, out)
+
+    @parameterized.expand(
+        [
+            (name + "_" + password_name, line, error, password)
+            for name, line, error in [
+                ("unknown_key", 'sa-host = "127.0.0.1"', "Unknown parameter `sa-host` in `secret-agent` section.\n"),
+                ("bad_value", "sa-timeout = 0", config_value_error("0", "sa-timeout")),
+                ("bad_address", 'sa-address = "[::1"', config_value_error("[::1", "sa-address")),
+            ]
+            for password_name, password in [("secret", "secrets:aql:pw"), ("literal", "literal")]
+        ]
+    )
+    def test_bad_section_fails_closed(self, _, line, error, password):
+        port, requests = self.answering_agent()
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "{}"\n[secret-agent]\nsa-port = {}\n{}\n'.format(password, port, line)
+        )
+        rc, out = run([], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(requests, [])
+        self.assertIn(error, out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_prompted_password_is_literal(self):
+        out = run_with_prompt(["-U", "admin", "-P", "--sa-port", self.closed], "secrets:aql:pw")
+
+        self.assertIn("Enter Password: ", out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertNotIn("--password:", out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("timeout_text", 'sa-timeout = "1s"', "sa-timeout", "1s"),
+            ("timeout_zero", "sa-timeout = 0", "sa-timeout", "0"),
+            ("timeout_negative", "sa-timeout = -1", "sa-timeout", "-1"),
+            ("timeout_too_big", "sa-timeout = 2147483648", "sa-timeout", "2147483648"),
+            ("timeout_float", "sa-timeout = 1.5", "sa-timeout", "1.5"),
+            ("port_zero", "sa-port = 0", "sa-port", "0"),
+            ("port_plus_zero", "sa-port = +0", "sa-port", "+0"),
+            ("port_too_big", 'sa-port = "65536"', "sa-port", "65536"),
+            ("port_too_big_underscores", "sa-port = 65_536", "sa-port", "65_536"),
+            ("port_text", 'sa-port = "http"', "sa-port", "http"),
+            ("port_bool", "sa-port = true", "sa-port", "true"),
+            ("address_int", "sa-address = 1", "sa-address", "1"),
+            ("address_bad", 'sa-address = "[::1"', "sa-address", "[::1"),
+            ("address_bad_port", 'sa-address = "host:0"', "sa-address", "host:0"),
+            ("address_extra_colon", 'sa-address = "host:3005:x"', "sa-address", "host:3005:x"),
+            ("address_bad_ipv6_zone", 'sa-address = "1::2::3%lo0"', "sa-address", "1::2::3%lo0"),
+            ("address_bracketed_not_ipv6", 'sa-address = "[host:3005:x]:3005"', "sa-address", "[host:3005:x]:3005"),
+            ("address_bracketed_hostname", 'sa-address = "[localhost]:3005"', "sa-address", "[localhost]:3005"),
+            ("address_bracketed_ipv4", 'sa-address = "[127.0.0.1]"', "sa-address", "[127.0.0.1]"),
+            ("cafile_int", "sa-cafile = 5", "sa-cafile", "5"),
+            ("ca_file_bool", "sa-ca-file = true", "sa-ca-file", "true"),
+        ]
+    )
+    def test_bad_config_value(self, _, line, key, value):
+        config = self.config("[secret-agent]\n{}\n".format(line))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(config_value_error(value, key), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_bad_config_value_names_instance_section(self):
+        config = self.config("[secret-agent]\n[secret-agent_a]\nsa-port = 0\n")
+        rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(config_value_error("0", "sa-port", "secret-agent_a"), out)
+
+    def test_bad_config_value_names_default_section_without_instance_section(self):
+        config = self.config("[secret-agent]\nsa-port = 0\n")
+        rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(config_value_error("0", "sa-port"), out)
+
+    def test_unknown_config_key(self):
+        config = self.config('[secret-agent]\nsa-host = "127.0.0.1"\n')
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("Unknown parameter `sa-host` in `secret-agent` section.", out)
+
+    def test_config_unreachable_agent(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-address = "127.0.0.1"\nsa-port = {}\nsa-timeout = 500\n'.format(self.closed)
+        )
+        rc, out = run([], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(
+            "password in config file: secret agent request for secrets:aql:pw failed: connection or protocol error\n", out
+        )
+        self.assertNotIn(CONNECT_FAILED, out)
+
+    def test_config_unreadable_cafile(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = "{}"\nsa-cafile = "{}"\n'.format(self.closed, self.missing)
+        )
+        rc, out = run([], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(
+            "sa-cafile in the [secret-agent] config section: cannot read file {}: No such file or directory\n".format(
+                self.missing
+            ),
+            out,
+        )
+
+    def test_config_values_are_not_resolved(self):
+        config = self.config('[secret-agent]\nsa-cafile = "env:AQL_TEST_NEVER_SET"\nsa-port = {}\n'.format(self.closed))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("environment variable", out)
+        self.assertIn(
+            "sa-cafile in the [secret-agent] config section: cannot read file env:AQL_TEST_NEVER_SET: "
+            "No such file or directory\n",
+            out,
+        )
+
+    def test_help(self):
+        out = utils.run_aql(["-O"]).stdout.decode()
+
+        for text in [
+            "[secret-agent]",
+            " --sa-address=HOST",
+            "Default: 127.0.0.1:3005",
+            " --sa-port=PORT       Secret Agent port, 1 to 65535. Overrides a port in --sa-address.\n"
+            "                      Default: 3005\n",
+            " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an integer\n"
+            "                      from 1 to 2147483647.\n"
+            "                      Default: 1000\n",
+            " --sa-ca-file=path",
+            "Agent and verifies its certificate against this CA. The",
+            "agent's hostname or IP address must be in the certificate.",
+            "(cluster aql secret-agent include)",
+        ]:
+            self.assertIn(text, out)
+        self.assertNotIn("--sa-cafile", out)
+        self.assertEqual(out.count("5) Aerospike Secret Agent: 'secrets:<resource>:<key>'"), 2)
+
+    def test_help_names_config_file_keys(self):
+        out = utils.run_aql(["-O"]).stdout.decode()
+
+        self.assertIn(
+            "[secret-agent]\n"
+            " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.\n"
+            " In a config file, set these in the [secret-agent] section as sa-address,\n"
+            " sa-port, sa-timeout and sa-ca-file.\n"
+            " --sa-address=HOST\n",
+            out,
+        )
+
+
+LIB_SRC = utils.absolute_path("..", "modules", "secret-agent-client", "src")
+MAIN_C = utils.absolute_path("..", "src", "main", "main.c")
+C_STRING = r'"(?:[^"\\]|\\.)*"'
+
+# Library log lines aql prints with their arguments, and the argument expressions reviewed as safe.
+REVIEWED_LOG_ARGS = {
+    "ERR: failed to lookup address: %s": "addr",
+    "ERR: connect failed, errno: %d": "conn_err",
+    "ERR: response: %.*s": "(int)payload_len, payload_str",
+    "ERR: SSL_connect failed: %s": "errbuf",
+    "ERR: SSL_connect I/O error: %s": "errbuf",
+    "ERR: SSL_connect certificate verify failed: %s (%ld)": "X509_verify_cert_error_string(rv), rv",
+    "ERR: unable to set TLS peer name: %s": "host",
+}
+
+
+def c_unescape(literal: str) -> str:
+    return literal[1:-1].encode().decode("unicode_escape")
+
+
+def strip_comments_and_chars(src: str, where: str) -> str:
+    """Drops C comments (keeping their newlines) and turns char literals into 0; string literals stay."""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        c = src[i]
+        if src.startswith("//", i):
+            end = src.find("\n", i)
+            i = n if end < 0 else end
+        elif src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            assert end >= 0, "{}: unterminated comment at line {}".format(where, src.count("\n", 0, i) + 1)
+            out.append(" " + "\n" * src.count("\n", i, end))
+            i = end + 2
+        elif c in "\"'":
+            end = i + 1
+            while end < n and src[end] != c and src[end] != "\n":
+                end += 2 if src[end] == "\\" else 1
+            assert end < n and src[end] == c, "{}: unterminated {} literal at line {}".format(
+                where, "string" if c == '"' else "char", src.count("\n", 0, i) + 1
+            )
+            out.append(src[i:end + 1] if c == '"' else "0")
+            i = end + 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def call_text(src: str, start: int, where: str) -> str:
+    """Text between the parentheses of a call whose '(' ends just before start, skipping string literals."""
+    depth, i, in_string = 1, start, False
+    while depth:
+        assert i < len(src), "{}: sa_g_log_function call has unbalanced parentheses".format(where)
+        c = src[i]
+        if in_string:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        i += 1
+    return src[start:i - 1]
+
+
+def library_sources() -> list[str]:
+    return sorted(glob.glob(os.path.join(LIB_SRC, "main", "*.c"))) + sorted(glob.glob(os.path.join(LIB_SRC, "include", "*.h")))
+
+
+def library_log_calls() -> list[tuple[str, str | None, str]]:
+    calls = []
+    for path in library_sources():
+        name = os.path.relpath(path, LIB_SRC)
+        with open(path) as f:
+            src = strip_comments_and_chars(f.read(), name)
+        for m in re.finditer(r"\bsa_g_log_function\s*\(", src):
+            where = "{}:{}".format(name, src.count("\n", 0, m.start()) + 1)
+            text = call_text(src, m.end(), where)
+            literal = re.match(r"\s*((?:{}\s*)+)(.*)$".format(C_STRING), text, re.S)
+            if literal is None:
+                calls.append((where, None, " ".join(text.split())))
+                continue
+            fmt = "".join(c_unescape(s) for s in re.findall(C_STRING, literal.group(1)))
+            calls.append((where, fmt, " ".join(literal.group(2).lstrip(",").split())))
+    return calls
+
+
+def aql_log_allow_list() -> list[str]:
+    with open(MAIN_C) as f:
+        src = strip_comments_and_chars(f.read(), "main.c")
+    match = re.search(r"SA_LOG_ALLOW\[\]\s*=\s*\{(.*?)\n\};", src, re.S)
+    assert match, "SA_LOG_ALLOW array not found in {}".format(MAIN_C)
+    entries = re.findall(r"\{\s*(" + C_STRING + r")\s*,", match.group(1))
+    assert entries, "no entries read from SA_LOG_ALLOW in {}".format(MAIN_C)
+    return [c_unescape(s) for s in entries]
+
+
+class SecretAgentLogFilterTest(unittest.TestCase):
+    """aql prints library log arguments only for allow-listed lines; a submodule bump must not slip past."""
+
+    def test_library_sources_found(self):
+        sources = library_sources()
+        self.assertTrue(any(p.endswith(".c") for p in sources), "no library .c files under " + LIB_SRC)
+        self.assertTrue(any(p.endswith(".h") for p in sources), "no library .h files under " + LIB_SRC)
+        self.assertGreater(len(library_log_calls()), 20)
+
+    def test_comments_and_char_literals_are_ignored(self):
+        src = strip_comments_and_chars(
+            'a("//", \'"\', \'(\'); // sa_g_log_function(x);\n/* sa_g_log_function(y);\n */ b("/*");\n', "sample"
+        )
+        self.assertNotIn("sa_g_log_function", src)
+        self.assertEqual(src.count("\n"), 3)
+        self.assertIn('a("//", 0, 0);', src)
+        self.assertIn('b("/*");', src)
+
+    def test_allow_list_is_reviewed(self):
+        self.assertEqual(sorted(aql_log_allow_list()), sorted(REVIEWED_LOG_ARGS))
+
+    def test_every_library_log_line_is_allowed_or_truncated(self):
+        allowed = set(aql_log_allow_list())
+        seen = set()
+        problems = []
+
+        for where, fmt, args in library_log_calls():
+            if fmt is None:
+                problems.append("{}: format is not a string literal: {}".format(where, args))
+            elif fmt in allowed:
+                seen.add(fmt)
+                if args != REVIEWED_LOG_ARGS.get(fmt):
+                    problems.append("{}: allowed line {!r} now passes {!r}, review it".format(where, fmt, args))
+            elif "%" in fmt and not fmt[:fmt.index("%")].rstrip(" :,-("):
+                problems.append("{}: {!r} has no fixed text to print".format(where, fmt))
+
+        problems += ["allowed line {!r} is not in the library".format(fmt) for fmt in sorted(allowed - seen)]
+        self.assertEqual(problems, [])
+
+
+class SecretAgentTest(unittest.TestCase):
+    """Runs aerospike-secret-agent in Docker with the file backend. No server needed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.dir)
+        os.chmod(cls.dir, 0o755)
+
+        write(os.path.join(cls.dir, "secrets.json"), json.dumps({k: b64(v) for k, v in SECRETS.items()}))
+        write(os.path.join(cls.dir, "other.json"), json.dumps({"pw": b64("other")}))
+
+        cls.key = os.path.join(cls.dir, "key.pem")
+        make_key(cls.key, SECRET)
+        cls.parsed_looking_key = os.path.join(cls.dir, "key2.pem")
+        make_key(cls.parsed_looking_key, PARSED_LOOKING_SECRET)
+        cls.long_password_key = os.path.join(cls.dir, "key3.pem")
+        make_key(cls.long_password_key, SECRETS["long_key"])
+        cls.ca = make_ca(cls.dir, "ca")
+        cls.other_ca = make_ca(cls.dir, "other-ca")
+        agent_cert = make_leaf(cls.dir, "agent", cls.ca, "DNS:localhost,IP:127.0.0.1")
+        wrong_name_cert = make_leaf(cls.dir, "wrong-name", cls.ca, "DNS:agent.invalid")
+
+        client = utils._get_docker_client()
+        try:
+            client.images.get("{}:{}".format(AGENT_IMAGE, AGENT_TAG))
+        except Exception:
+            client.images.pull(AGENT_IMAGE, tag=AGENT_TAG, platform="linux/amd64")
+
+        cls.port = str(start_agent(cls, cls.dir, "tcp", None))
+        cls.tls_port = str(start_agent(cls, cls.dir, "tls", agent_cert, cls.ca))
+        cls.wrong_name_port = str(start_agent(cls, cls.dir, "tls-wrong-name", wrong_name_cert, cls.ca))
+        cls.closed = str(closed_port())
+
+    def config(self, content: str) -> str:
+        path = os.path.join(self.dir, "astools-{}.conf".format(uuid.uuid4().hex))
+        write(path, content)
+        return path
+
+    def assert_no_secret(self, out: str):
+        for value in [SECRET, b64(SECRET), "wrong", b64("wrong")]:
+            self.assertNotIn(value, out)
+
+    def assert_password_resolved(self, rc: int, out: str):
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("--password:", out)
+        self.assertNotIn("secret-agent:", out)
+        self.assertIn(CONNECT_FAILED, out)
+        self.assert_no_secret(out)
+
+    def test_tls_keyfile_password(self):
+        rc, out = run(
+            ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password", "secrets:aql:pw", "--sa-port", self.port]
+        )
+
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_tls_keyfile_wrong_password(self):
+        rc, out = run(
+            ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password", "secrets:aql:wrong", "--sa-port", self.port]
+        )
+
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertIn(TLS_KEY_FAILED, out)
+
+    def test_value_is_not_trimmed(self):
+        rc, out = run(
+            [
+                "--tls-enable", "--tls-keyfile", self.key,
+                "--tls-keyfile-password", "secrets:aql:trailing_newline", "--sa-port", self.port,
+            ]
+        )
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(TLS_KEY_FAILED, out)
+
+    def test_value_is_not_parsed_again(self):
+        rc, out = run(
+            [
+                "--tls-enable", "--tls-keyfile", self.parsed_looking_key,
+                "--tls-keyfile-password", "secrets:aql:env_looking", "--sa-port", self.port,
+            ]
+        )
+
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertNotIn("environment variable", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    @parameterized.expand(
+        [
+            ("password_first_attached", ["-Psecrets:aql:pw", "--sa-address", "127.0.0.1:{port}"]),
+            ("password_first_separate", ["-P", "secrets:aql:pw", "--sa-address=127.0.0.1:{port}"]),
+            ("password_long", ["--password=secrets:aql:pw", "--sa-port", "{port}"]),
+            ("agent_first", ["--sa-port", "{port}", "--password", "secrets:aql:pw"]),
+            ("explicit_port_after_address", ["-P", "secrets:aql:pw", "--sa-address", "127.0.0.1:{closed}", "--sa-port", "{port}"]),
+            ("explicit_port_before_address", ["-P", "secrets:aql:pw", "--sa-port", "{port}", "--sa-address", "127.0.0.1:{closed}"]),
+            ("hostname", ["-P", "secrets:aql:pw", "--sa-address", "localhost", "--sa-port", "{port}"]),
+            ("timeout", ["-P", "secrets:aql:pw", "--sa-port", "{port}", "--sa-timeout", "5000"]),
+        ]
+    )
+    def test_password(self, _, args):
+        args = [a.format(port=self.port, closed=self.closed) for a in args]
+        rc, out = run(["-U", "admin"] + args)
+
+        self.assert_password_resolved(rc, out)
+
+    def test_login_uses_secret_from_command_line(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.port])
+        self.assertEqual(login, literal_login(SECRET))
+
+    def test_login_uses_wrong_secret_from_command_line(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:wrong", "--sa-port", self.port])
+        self.assertEqual(login, literal_login("wrong"))
+        self.assertNotEqual(login, literal_login(SECRET))
+
+    def test_login_uses_secret_from_config_file(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = {}\n'.format(self.port)
+        )
+        self.assertEqual(capture_login([], config=config), literal_login(SECRET))
+
+    def test_password_from_config_file(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-address = "127.0.0.1"\nsa-port = {}\nsa-timeout = 5000\n'.format(self.port)
+        )
+        rc, out = run([], config=config)
+
+        self.assert_password_resolved(rc, out)
+
+    def test_tls_keyfile_password_from_config_file(self):
+        config = self.config(
+            '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\ntls-keyfile-password = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-port = "{}"\n'.format(self.key, self.port)
+        )
+        rc, out = run([], config=config)
+
+        self.assertNotIn("--tls-keyfile-password:", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_config_explicit_port_beats_address_port(self):
+        config = self.config(
+            '[secret-agent]\nsa-port = {}\nsa-address = "127.0.0.1:{}"\n'.format(self.port, self.closed)
+        )
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_password_resolved(rc, out)
+
+    def test_command_line_applies_to_config_file_password(self):
+        config = self.config(
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:pw"\n'
+            '[secret-agent]\nsa-address = "127.0.0.1:{}"\n'.format(self.closed)
+        )
+
+        rc, out = run([], config=config)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("password in config file: secret agent request for secrets:aql:pw failed", out)
+
+        rc, out = run(["--sa-address", "127.0.0.1:" + self.port], config=config)
+        self.assert_password_resolved(rc, out)
+
+        rc, out = run(["--sa-port", self.port], config=config)
+        self.assert_password_resolved(rc, out)
+
+    def test_command_line_address_port_beats_config_port(self):
+        config = self.config('[secret-agent]\nsa-port = {}\n'.format(self.closed))
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", "127.0.0.1:" + self.port], config=config)
+
+        self.assert_password_resolved(rc, out)
+
+    def test_instance_section_replaces_default_section(self):
+        config = self.config(
+            '[secret-agent]\nsa-port = {}\nsa-cafile = "{}"\n'
+            '[secret-agent_a]\nsa-port = {}\n'.format(self.closed, os.path.join(self.dir, "missing.pem"), self.port)
+        )
+
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("sa-cafile in the [secret-agent] config section: cannot read file", out)
+
+        rc, out = run(["--instance", "a", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+        self.assert_password_resolved(rc, out)
+
+        rc, out = run(["--instance", "b", "-U", "admin", "-P", "secrets:aql:pw"], config=config)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("sa-cafile in the [secret-agent] config section: cannot read file", out)
+
+    def test_included_file(self):
+        included = self.config('[secret-agent]\nsa-port = {}\n'.format(self.port))
+        config = self.config(
+            '[secret-agent]\nsa-port = {}\n[include]\nfile = "{}"\n'.format(self.closed, included)
+        )
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_password_resolved(rc, out)
+
+    @parameterized.expand([("ip", "127.0.0.1"), ("hostname", "localhost")])
+    def test_tls_to_agent(self, _, address):
+        rc, out = run(
+            ["-U", "admin", "-P", "secrets:aql:pw", "--sa-address", address, "--sa-port", self.tls_port, "--sa-cafile", self.ca]
+        )
+        self.assert_password_resolved(rc, out)
+
+        config = self.config(
+            '[secret-agent]\nsa-address = "{}"\nsa-port = {}\nsa-cafile = "{}"\n'.format(address, self.tls_port, self.ca)
+        )
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+        self.assert_password_resolved(rc, out)
+
+    def test_login_uses_secret_over_tls(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-cafile", self.ca])
+        self.assertEqual(login, literal_login(SECRET))
+
+    @parameterized.expand([("command_line",), ("config_file",)])
+    def test_tls_to_agent_with_ca_file(self, source):
+        if source == "command_line":
+            rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-ca-file", self.ca])
+        else:
+            config = self.config('[secret-agent]\nsa-port = {}\nsa-ca-file = "{}"\n'.format(self.tls_port, self.ca))
+            rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"], config=config)
+
+        self.assert_password_resolved(rc, out)
+
+    @parameterized.expand(
+        [
+            ("command_line_ca_file_first", ["--sa-ca-file", "{ca}", "--sa-cafile", "{missing}"], None),
+            ("command_line_cafile_first", ["--sa-cafile", "{missing}", "--sa-ca-file", "{ca}"], None),
+            ("config_ca_file_first", [], 'sa-ca-file = "{ca}"\nsa-cafile = "{missing}"'),
+            ("config_cafile_first", [], 'sa-cafile = "{missing}"\nsa-ca-file = "{ca}"'),
+        ]
+    )
+    def test_ca_file_beats_cafile(self, _, args, lines):
+        missing = os.path.join(self.dir, "missing.pem")
+        args = [a.format(ca=self.ca, missing=missing) for a in args]
+        config = None
+        if lines:
+            config = self.config(
+                "[secret-agent]\nsa-port = {}\n{}\n".format(self.tls_port, lines.format(ca=self.ca, missing=missing))
+            )
+        else:
+            args += ["--sa-port", self.tls_port]
+
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw"] + args, config=config)
+
+        self.assert_password_resolved(rc, out)
+        self.assertNotIn(missing, out)
+
+    @parameterized.expand(
+        [
+            ("quote_in_key", 'secrets:aql:p"w'),
+            ("backslash_in_key", "secrets:aql:p\\w"),
+            ("injected_resource", 'secrets:nope","Resource":"other:pw'),
+        ]
+    )
+    def test_request_fields_are_escaped(self, _, path):
+        start = time.monotonic()
+        rc, out = run(["-U", "admin", "-P", path, "--sa-port", self.port, "--sa-timeout", "3000"])
+        elapsed = time.monotonic() - start
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: secret agent request for {} failed: bad request\n".format(path), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertLess(elapsed, 2)
+
+    @parameterized.expand(
+        [
+            ("unrelated_ca", "127.0.0.1", "tls_port", "other_ca", "unable to get local issuer certificate"),
+            ("agent_cert_as_ca", "127.0.0.1", "tls_port", "agent_cert", "unable to get local issuer certificate"),
+            ("hostname_mismatch", "localhost", "wrong_name_port", "ca", "hostname mismatch"),
+            ("ip_mismatch", "127.0.0.1", "wrong_name_port", "ca", "IP address mismatch"),
+        ]
+    )
+    def test_tls_certificate_rejected(self, _, address, port, cafile, reason):
+        cafiles = {"ca": self.ca, "other_ca": self.other_ca, "agent_cert": os.path.join(self.dir, "agent.pem")}
+        rc, out = run(
+            [
+                "-U", "admin", "-P", "secrets:aql:pw", "--sa-address", address,
+                "--sa-port", getattr(self, port), "--sa-cafile", cafiles[cafile],
+            ]
+        )
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("secret-agent: ERR: SSL_connect certificate verify failed: {} (".format(reason), out)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: connection or protocol error\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assert_no_secret(out)
+
+    def test_tls_agent_without_cafile(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:pw", "--sa-port", self.tls_port, "--sa-timeout", "2000"])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: secret agent request for secrets:aql:pw failed: connection or protocol error\n", out)
+        self.assertNotIn("SSL_connect", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assert_no_secret(out)
+
+    @parameterized.expand(
+        [
+            ("missing_resource", "secrets:nope:pw", "secret-agent: ERR: response: resource not found in config: nope\n"),
+            ("missing_key", "secrets:aql:nope", "secret-agent: ERR: response: nope not present in file {}/secrets.json\n".format(AGENT_DIR)),
+            ("empty_value", "secrets:aql:empty", "secret-agent: ERR: empty secret\n"),
+            ("no_key", "secrets:", "secret-agent: ERR: empty secret key\n"),
+        ]
+    )
+    def test_agent_error(self, _, path, detail):
+        rc, out = run(["-U", "admin", "-P", path, "--sa-port", self.port])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn(detail, out)
+        self.assertIn("--password: secret agent request for {} failed: bad request\n".format(path), out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assert_no_secret(out)
+
+    def test_longest_password_is_sent(self):
+        login = capture_login(["-U", "admin", "-P", "secrets:aql:longest", "--sa-port", self.port])
+        self.assertEqual(login, literal_login(SECRETS["longest"]))
+
+    def test_too_long_password_is_rejected(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:too_long", "--sa-port", self.port])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: value from secrets:aql:too_long is longer than 63 bytes\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("Invalid password", out)
+        self.assertNotIn(SECRETS["too_long"], out)
+        self.assertNotIn(b64(SECRETS["too_long"]), out)
+
+    def test_tls_keyfile_password_over_63_bytes_is_used(self):
+        rc, out = run(
+            [
+                "--tls-enable", "--tls-keyfile", self.long_password_key,
+                "--tls-keyfile-password", "secrets:aql:long_key", "--sa-port", self.port,
+            ]
+        )
+
+        self.assertNotIn("longer than", out)
+        self.assertNotIn(TLS_KEY_FAILED, out)
+        self.assertIn(CONNECT_FAILED, out)
+
+    def test_value_with_nul_byte(self):
+        rc, out = run(["-U", "admin", "-P", "secrets:aql:with_nul", "--sa-port", self.port])
+
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--password: secret agent returned a value containing a NUL byte for secrets:aql:with_nul\n", out)
+        self.assertNotIn(CONNECT_FAILED, out)
+        self.assertNotIn("xyzzy", out)
+
+    def test_resource_selects_file(self):
+        rc, out = run(
+            ["--tls-enable", "--tls-keyfile", self.key, "--tls-keyfile-password", "secrets:other:pw", "--sa-port", self.port]
+        )
+
+        self.assertIn(TLS_KEY_FAILED, out)
+
+
+if __name__ == "__main__":
+    unittest.main()
