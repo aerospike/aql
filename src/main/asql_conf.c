@@ -435,6 +435,12 @@ config_init(asql_config* conf, int argc, char* argv[], char** cmd, char** fname,
 
 	config_default(conf, instance);
 
+	struct stat config_stat;
+
+	if (read_conf_files && config_fname && stat(config_fname, &config_stat) != 0 && errno == ENOENT) {
+		fprintf(stderr, "Warning: cannot read config file %s: %s\n", config_fname, strerror(errno));
+	}
+
 	if (read_conf_files) {
 		if (read_only_conf_file) {
 			if (! config_from_file(conf, instance, config_fname, 0)) {

@@ -952,6 +952,25 @@ class SecretAgentOptionTest(unittest.TestCase):
         self.assertNotIn("cannot read config file", out)
         self.assertNotIn("Skipped", out)
 
+    def run_with_home(self, args: list[str]) -> str:
+        with mock.patch.dict(os.environ, {"HOME": self.dir}):
+            out = utils.run_aql(args + ["-U", "admin", "-P", "literal"] + UNREACHABLE)
+
+        return out.stdout.decode(errors="replace") + out.stderr.decode(errors="replace")
+
+    @parameterized.expand([("config_file", "--config-file"), ("only_config_file", "--only-config-file")])
+    def test_missing_named_config_file_is_reported(self, _, opt):
+        """The file the user named may have held the agent's CA file, so it is not skipped silently."""
+        missing = os.path.join(self.dir, "missing.conf")
+        out = self.run_with_home([opt, missing])
+
+        self.assertIn("Warning: cannot read config file {}: No such file or directory\n".format(missing), out)
+
+    def test_missing_default_config_file_is_not_reported(self):
+        out = self.run_with_home(["--config-file", self.config("")])
+
+        self.assertNotIn("cannot read config file", out)
+
     @unittest.skipIf(os.geteuid() == 0, "root can read any file")
     def test_unreadable_config_file_is_reported(self):
         port, _ = self.answering_agent()
