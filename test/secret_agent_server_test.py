@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import shutil
@@ -101,6 +102,11 @@ class SecretAgentServerTest(unittest.TestCase):
             if os.environ.get("CI"):
                 raise RuntimeError("FEATKEY must be set to a base64 encoded feature key file")
             raise unittest.SkipTest("FEATKEY is not set to a base64 encoded feature key file")
+
+        try:
+            base64.b64decode("".join(featkey.split()), validate=True)
+        except ValueError:
+            raise RuntimeError("FEATKEY is not base64; set it to a base64 encoded feature key file")
 
         cls.dir = tempfile.mkdtemp()
         cls.addClassCleanup(shutil.rmtree, cls.dir)
