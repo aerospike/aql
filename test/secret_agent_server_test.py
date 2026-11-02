@@ -13,7 +13,7 @@ import aerospike
 from parameterized import parameterized
 
 import utils
-from secret_agent_test import b64, closed_port, make_ca, make_leaf, start_agent, write
+from secret_agent_test import AGENT_DIR, b64, closed_port, make_ca, make_leaf, start_agent, write
 
 SERVER_IMAGE = "aerospike/aerospike-server-enterprise"
 SERVER_TAG = "8.2.0.0"
@@ -33,6 +33,8 @@ USERS = {
     "sa-literal": "secrets:aql:literal_ref",
     "sa-lookalike": SECRETS["prefix_lookalike"],
     "sa-longest": SECRETS["longest"],
+    "sa-missing-key": "secrets:aql:absent",
+    "sa-missing-resource": "secrets:absent:pw",
 }
 
 SELECT_SEED = "SELECT * FROM test.sa WHERE PK = 'seed'"
@@ -77,19 +79,31 @@ def start_server(test_cls, dir: str, featkey: str):
     return container, port
 
 
+def cluster_stable(client) -> bool:
+    keys = set()
+    for error, response in client.info_all("cluster-stable:size=1").values():
+        value = (response or "").split("\t", 1)[-1].strip()
+        keys.add(None if error or not value or value.upper().startswith("ERROR") else value)
+    return len(keys) == 1 and None not in keys
+
+
 def admin_client(container, port: int, timeout: float = 60):
     config = {"hosts": [("127.0.0.1", port)], "user": "admin", "password": "admin"}
     deadline = time.time() + timeout
+    client = None
 
     while True:
         try:
-            return aerospike.client(config).connect()
+            client = client or aerospike.client(config).connect()
+            if cluster_stable(client):
+                return client
         except aerospike.exception.AerospikeError:
-            if time.time() > deadline:
-                raise RuntimeError(
-                    "secured server not ready on port {}:\n{}".format(port, container.logs().decode(errors="replace"))
-                )
-            time.sleep(0.5)
+            pass
+        if time.time() > deadline:
+            raise RuntimeError(
+                "secured server not ready on port {}:\n{}".format(port, container.logs().decode(errors="replace"))
+            )
+        time.sleep(0.5)
 
 
 class SecretAgentServerTest(unittest.TestCase):
@@ -183,6 +197,40 @@ class SecretAgentServerTest(unittest.TestCase):
 
         rc, out = self.aql(["-U", "sa-literal", "-P", "secrets:aql:literal_ref", "--sa-port", self.agent_port])
         self.assert_rejected(rc, out)
+
+    @parameterized.expand(
+        [
+            ("agent_unreachable", "sa-literal", "{closed}", "connection or protocol error", "secret-agent: ERR: connect failed"),
+            (
+                "missing_key",
+                "sa-missing-key",
+                "{port}",
+                "bad request",
+                "secret-agent: ERR: response: absent not present in file {}/secrets.json\n".format(AGENT_DIR),
+            ),
+            (
+                "missing_resource",
+                "sa-missing-resource",
+                "{port}",
+                "bad request",
+                "secret-agent: ERR: response: resource not found in config: absent\n",
+            ),
+        ]
+    )
+    def test_failed_fetch_never_sends_reference(self, _, user, sa_port, reason, detail):
+        reference = USERS[user]
+        rc, out = self.aql(["-U", user, "-P", "b64:" + b64(reference)])
+        self.assert_logged_in(rc, out)
+
+        sa_port = sa_port.format(port=self.agent_port, closed=closed_port())
+        rc, out = self.aql(["-U", user, "-P", reference, "--sa-port", sa_port])
+
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("--password: secret agent request for {} failed: {}\n".format(reference, reason), out)
+        self.assertIn(detail, out)
+        self.assertNotIn(SEED_ROW, out)
+        self.assertNotIn(INVALID_CREDENTIAL, out)
+        self.assertNotIn(LOGIN_FAILED, out)
 
     def test_fetched_value_is_not_resolved_again(self):
         rc, out = self.aql(["-U", "sa-lookalike", "-P", "secrets:aql:prefix_lookalike", "--sa-port", self.agent_port])
