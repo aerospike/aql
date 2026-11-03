@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import string
+import subprocess
 import tempfile
 import time
 import unittest
@@ -18,6 +19,7 @@ from secret_agent_test import AGENT_DIR, b64, closed_port, make_ca, make_leaf, s
 SERVER_IMAGE = "aerospike/aerospike-server-enterprise"
 SERVER_TAG = "8.2.0.0"
 CONF_DIR = "/opt/work"
+OWNER_LABEL = "aql-sa-sec-owner"
 UNSET_VAR = "AQL_SA_UNSET"
 
 SECRETS = {
@@ -56,11 +58,45 @@ def server_conf(port: int) -> str:
     return "security {\n}\n\n" + conf.replace("service {", "service {\n\tfeature-key-file env-b64:FEATURES", 1)
 
 
-def start_server(test_cls, dir: str, featkey: str):
+def feature_key() -> str:
+    key = "".join(os.environ.get("FEATKEY", "").split())
+    if not key:
+        if os.environ.get("CI"):
+            raise RuntimeError("FEATKEY must be set in CI: export FEATKEY=$(base64 < features.conf)")
+        raise unittest.SkipTest(
+            "FEATKEY is not set: export FEATKEY=$(base64 < features.conf) to run the secured server tests"
+        )
+
+    try:
+        base64.b64decode(key, validate=True)
+    except ValueError:
+        raise RuntimeError("FEATKEY is not base64: export FEATKEY=$(base64 < features.conf)") from None
+    return key
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def remove_leftover_servers(client):
+    for container in client.containers.list(all=True, filters={"label": OWNER_LABEL}):
+        owner = int(container.labels[OWNER_LABEL])
+        if owner == os.getpid() or not pid_alive(owner):
+            container.remove(force=True)
+
+
+def start_server(test_cls, dir: str):
     port = closed_port()
     write(os.path.join(dir, "aerospike.conf"), server_conf(port))
 
     client = utils._get_docker_client()
+    remove_leftover_servers(client)
     try:
         client.images.get("{}:{}".format(SERVER_IMAGE, SERVER_TAG))
     except Exception:
@@ -72,7 +108,8 @@ def start_server(test_cls, dir: str, featkey: str):
         name="aql-sa-sec-{}".format(os.getpid()),
         ports={"{}/tcp".format(port): ("127.0.0.1", port)},
         volumes={dir: {"bind": CONF_DIR, "mode": "ro"}},
-        environment={"FEATURES": featkey},
+        labels={OWNER_LABEL: str(os.getpid())},
+        environment={"FEATURES": feature_key()},
     )
     test_cls.addClassCleanup(container.remove, force=True)
     container.start()
@@ -99,9 +136,12 @@ def admin_client(container, port: int, timeout: float = 60):
                 return client
         except aerospike.exception.AerospikeError:
             pass
-        if time.time() > deadline:
+        container.reload()
+        if container.status != "running" or time.time() > deadline:
             raise RuntimeError(
-                "secured server not ready on port {}:\n{}".format(port, container.logs().decode(errors="replace"))
+                "secured server not ready on port {} ({}):\n{}".format(
+                    port, container.status, container.logs().decode(errors="replace")
+                )
             )
         time.sleep(0.5)
 
@@ -111,17 +151,15 @@ class SecretAgentServerTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        featkey = os.environ.get("FEATKEY")
-        if not featkey:
-            if os.environ.get("CI"):
-                raise RuntimeError("FEATKEY must be set to a base64 encoded feature key file")
-            raise unittest.SkipTest("FEATKEY is not set to a base64 encoded feature key file")
-
+        feature_key()
         try:
-            base64.b64decode("".join(featkey.split()), validate=True)
-        except ValueError:
-            raise RuntimeError("FEATKEY is not base64; set it to a base64 encoded feature key file")
+            cls.start_servers()
+        except BaseException:
+            cls.doClassCleanups()
+            raise
 
+    @classmethod
+    def start_servers(cls):
         cls.dir = tempfile.mkdtemp()
         cls.addClassCleanup(shutil.rmtree, cls.dir)
         os.chmod(cls.dir, 0o755)
@@ -131,7 +169,7 @@ class SecretAgentServerTest(unittest.TestCase):
         cls.ca = make_ca(cls.dir, "ca")
         agent_cert = make_leaf(cls.dir, "agent", cls.ca, "DNS:localhost,IP:127.0.0.1")
 
-        container, port = start_server(cls, cls.dir, featkey)
+        container, port = start_server(cls, cls.dir)
         cls.port = str(port)
         cls.agent_port = str(start_agent(cls, cls.dir, "sec-tcp", None))
         cls.tls_port = str(start_agent(cls, cls.dir, "sec-tls", agent_cert, cls.ca))
@@ -158,12 +196,22 @@ class SecretAgentServerTest(unittest.TestCase):
         conf = ["--only-config-file", config] if config else ["--no-config-file"]
         with mock.patch.dict(os.environ, {}):
             os.environ.pop(UNSET_VAR, None)
-            out = utils.run_aql(conf + ["-h", "127.0.0.1", "-p", self.port] + args + ["-c", command], timeout=60)
+            out = utils.run_aql(
+                conf + ["-h", "127.0.0.1", "-p", self.port] + args + ["-c", command],
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+            )
         return out.returncode, out.stdout.decode(errors="replace") + out.stderr.decode(errors="replace")
+
+    def assert_no_secret(self, out: str):
+        for value in SECRETS.values():
+            self.assertNotIn(value, out)
+            self.assertNotIn(b64(value), out)
 
     def assert_logged_in(self, rc: int, out: str):
         self.assertEqual(rc, 0, out)
         self.assertIn(SEED_ROW, out)
+        self.assert_no_secret(out)
 
     def assert_rejected(self, rc: int, out: str):
         self.assertNotEqual(rc, 0, out)
@@ -171,25 +219,34 @@ class SecretAgentServerTest(unittest.TestCase):
         self.assertIn(LOGIN_FAILED, out)
         self.assertNotIn("--password:", out)
         self.assertNotIn("secret-agent:", out)
+        self.assert_no_secret(out)
 
-    def test_login_reads_and_writes(self):
-        args = ["-U", "sa-user", "-P", "secrets:aql:pw", "--sa-port", self.agent_port]
+    @parameterized.expand(
+        [
+            ("separate", ["-P", "secrets:aql:pw"]),
+            ("attached", ["-Psecrets:aql:pw"]),
+            ("long", ["--password=secrets:aql:pw"]),
+        ]
+    )
+    def test_login_reads_and_writes(self, name, password):
+        args = ["-U", "sa-user"] + password + ["--sa-port", self.agent_port]
+        key = "k-" + name
 
-        rc, out = self.aql(args, command="INSERT INTO test.sa (PK, a) VALUES ('k1', 1)")
+        rc, out = self.aql(args, command="INSERT INTO test.sa (PK, a) VALUES ('{}', 1)".format(key))
         self.assertEqual(rc, 0, out)
         self.assertIn("OK, 1 record affected.", out)
-        self.assertEqual(self.client.get(("test", "sa", "k1"))[2], {"a": 1})
+        self.assert_no_secret(out)
+        self.assertEqual(self.client.get(("test", "sa", key))[2], {"a": 1})
 
-        rc, out = self.aql(args, command="SELECT * FROM test.sa WHERE PK = 'k1'")
+        rc, out = self.aql(args, command="SELECT * FROM test.sa WHERE PK = '{}'".format(key))
         self.assertEqual(rc, 0, out)
-        self.assertIn('| "k1" | 1 |', out)
+        self.assertIn('| "{}" | 1 |'.format(key), out)
+        self.assert_no_secret(out)
 
     def test_wrong_fetched_password_is_rejected_by_server(self):
         rc, out = self.aql(["-U", "sa-user", "-P", "secrets:aql:wrong", "--sa-port", self.agent_port])
 
         self.assert_rejected(rc, out)
-        for value in [SECRETS["pw"], SECRETS["wrong"], b64(SECRETS["pw"]), b64(SECRETS["wrong"])]:
-            self.assertNotIn(value, out)
 
     def test_reference_is_never_sent(self):
         rc, out = self.aql(["-U", "sa-literal", "-P", "b64:" + b64(USERS["sa-literal"])])
@@ -231,6 +288,7 @@ class SecretAgentServerTest(unittest.TestCase):
         self.assertNotIn(SEED_ROW, out)
         self.assertNotIn(INVALID_CREDENTIAL, out)
         self.assertNotIn(LOGIN_FAILED, out)
+        self.assert_no_secret(out)
 
     def test_fetched_value_is_not_resolved_again(self):
         rc, out = self.aql(["-U", "sa-lookalike", "-P", "secrets:aql:prefix_lookalike", "--sa-port", self.agent_port])
