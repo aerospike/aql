@@ -1,0 +1,347 @@
+import base64
+import json
+import os
+import shutil
+import string
+import subprocess
+import tempfile
+import time
+import unittest
+import uuid
+from unittest import mock
+
+import aerospike
+from parameterized import parameterized
+
+import utils
+from secret_agent_test import AGENT_DIR, b64, closed_port, make_ca, make_leaf, start_agent, write
+
+SERVER_IMAGE = "aerospike/aerospike-server-enterprise"
+SERVER_TAG = "8.2.0.0"
+CONF_DIR = "/opt/work"
+OWNER_LABEL = "aql-sa-sec-owner"
+UNSET_VAR = "AQL_SA_UNSET"
+
+SECRETS = {
+    "pw": "sa-good-7Hq2",
+    "wrong": "sa-bad-3Kx9",
+    "literal_ref": "sa-ref-9Lm4",
+    "prefix_lookalike": "env:" + UNSET_VAR,
+    "longest": "p" * 63,
+}
+
+USERS = {
+    "sa-user": SECRETS["pw"],
+    "sa-literal": "secrets:aql:literal_ref",
+    "sa-lookalike": SECRETS["prefix_lookalike"],
+    "sa-longest": SECRETS["longest"],
+    "sa-missing-key": "secrets:aql:absent",
+    "sa-missing-resource": "secrets:absent:pw",
+}
+
+SELECT_SEED = "SELECT * FROM test.sa WHERE PK = 'seed'"
+SEED_ROW = '| "seed" | 7 |'
+INVALID_CREDENTIAL = "AEROSPIKE_INVALID_CREDENTIAL"
+LOGIN_FAILED = "Error 65: Failed to connect\n"
+
+
+def server_conf(port: int) -> str:
+    with open(utils.absolute_path("aerospike.conf")) as f:
+        conf = string.Template(f.read()).substitute(
+            state_directory="/opt/aerospike",
+            service_port=port,
+            fabric_port=3001,
+            heartbeat_port=3002,
+            info_port=3003,
+            access_address="127.0.0.1",
+        )
+    return "security {\n}\n\n" + conf.replace("service {", "service {\n\tfeature-key-file env-b64:FEATURES", 1)
+
+
+def feature_key() -> str:
+    key = "".join(os.environ.get("FEATKEY", "").split())
+    if not key:
+        if os.environ.get("CI"):
+            raise RuntimeError("FEATKEY must be set in CI: export FEATKEY=$(base64 < features.conf)")
+        raise unittest.SkipTest(
+            "FEATKEY is not set: export FEATKEY=$(base64 < features.conf) to run the secured server tests"
+        )
+
+    try:
+        base64.b64decode(key, validate=True)
+    except ValueError:
+        raise RuntimeError("FEATKEY is not base64: export FEATKEY=$(base64 < features.conf)") from None
+    return key
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def remove_leftover_servers(client):
+    for container in client.containers.list(all=True, filters={"label": OWNER_LABEL}):
+        owner = int(container.labels[OWNER_LABEL])
+        if owner == os.getpid() or not pid_alive(owner):
+            container.remove(force=True)
+
+
+def start_server(test_cls, dir: str):
+    port = closed_port()
+    write(os.path.join(dir, "aerospike.conf"), server_conf(port))
+
+    client = utils._get_docker_client()
+    remove_leftover_servers(client)
+    try:
+        client.images.get("{}:{}".format(SERVER_IMAGE, SERVER_TAG))
+    except Exception:
+        client.images.pull(SERVER_IMAGE, tag=SERVER_TAG)
+
+    container = client.containers.create(
+        "{}:{}".format(SERVER_IMAGE, SERVER_TAG),
+        command="/usr/bin/asd --foreground --config-file {}/aerospike.conf".format(CONF_DIR),
+        name="aql-sa-sec-{}".format(os.getpid()),
+        ports={"{}/tcp".format(port): ("127.0.0.1", port)},
+        volumes={dir: {"bind": CONF_DIR, "mode": "ro"}},
+        labels={OWNER_LABEL: str(os.getpid())},
+        environment={"FEATURES": feature_key()},
+    )
+    test_cls.addClassCleanup(container.remove, force=True)
+    container.start()
+    return container, port
+
+
+def cluster_stable(client) -> bool:
+    keys = set()
+    for error, response in client.info_all("cluster-stable:size=1").values():
+        value = (response or "").split("\t", 1)[-1].strip()
+        keys.add(None if error or not value or value.upper().startswith("ERROR") else value)
+    return len(keys) == 1 and None not in keys
+
+
+def admin_client(container, port: int, timeout: float = 60):
+    config = {"hosts": [("127.0.0.1", port)], "user": "admin", "password": "admin"}
+    deadline = time.time() + timeout
+    client = None
+
+    while True:
+        try:
+            client = client or aerospike.client(config).connect()
+            if cluster_stable(client):
+                return client
+        except aerospike.exception.AerospikeError:
+            pass
+        container.reload()
+        if container.status != "running" or time.time() > deadline:
+            raise RuntimeError(
+                "secured server not ready on port {} ({}):\n{}".format(
+                    port, container.status, container.logs().decode(errors="replace")
+                )
+            )
+        time.sleep(0.5)
+
+
+class SecretAgentServerTest(unittest.TestCase):
+    """Logs in to a secured Enterprise server with passwords from a real secret agent."""
+
+    @classmethod
+    def setUpClass(cls):
+        feature_key()
+        try:
+            cls.start_servers()
+        except BaseException:
+            cls.doClassCleanups()
+            raise
+
+    @classmethod
+    def start_servers(cls):
+        cls.dir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.dir)
+        os.chmod(cls.dir, 0o755)
+
+        write(os.path.join(cls.dir, "secrets.json"), json.dumps({k: b64(v) for k, v in SECRETS.items()}))
+        write(os.path.join(cls.dir, "other.json"), "{}")
+        cls.ca = make_ca(cls.dir, "ca")
+        agent_cert = make_leaf(cls.dir, "agent", cls.ca, "DNS:localhost,IP:127.0.0.1")
+
+        container, port = start_server(cls, cls.dir)
+        cls.port = str(port)
+        cls.agent_port = str(start_agent(cls, cls.dir, "sec-tcp", None))
+        cls.tls_port = str(start_agent(cls, cls.dir, "sec-tls", agent_cert, cls.ca))
+
+        admin = admin_client(container, port)
+        admin.admin_grant_roles("admin", ["read-write"])
+        admin.close()
+
+        cls.client = admin_client(container, port)
+        cls.addClassCleanup(cls.client.close)
+
+        for user, password in USERS.items():
+            cls.client.admin_create_user(user, password, ["read-write"])
+            cls.addClassCleanup(cls.client.admin_drop_user, user)
+
+        cls.client.put(("test", "sa", "seed"), {"a": 7}, policy={"key": aerospike.POLICY_KEY_SEND})
+
+    def config(self, content: str) -> str:
+        path = os.path.join(self.dir, "astools-{}.conf".format(uuid.uuid4().hex))
+        write(path, content)
+        return path
+
+    def aql(self, args, config=None, command=SELECT_SEED):
+        conf = ["--only-config-file", config] if config else ["--no-config-file"]
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop(UNSET_VAR, None)
+            out = utils.run_aql(
+                conf + ["-h", "127.0.0.1", "-p", self.port] + args + ["-c", command],
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+            )
+        return out.returncode, out.stdout.decode(errors="replace") + out.stderr.decode(errors="replace")
+
+    def assert_no_secret(self, out: str):
+        for value in SECRETS.values():
+            self.assertNotIn(value, out)
+            self.assertNotIn(b64(value), out)
+
+    def assert_logged_in(self, rc: int, out: str):
+        self.assertEqual(rc, 0, out)
+        self.assertIn(SEED_ROW, out)
+        self.assert_no_secret(out)
+
+    def assert_rejected(self, rc: int, out: str):
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn(INVALID_CREDENTIAL, out)
+        self.assertIn(LOGIN_FAILED, out)
+        self.assertNotIn("--password:", out)
+        self.assertNotIn("secret-agent:", out)
+        self.assert_no_secret(out)
+
+    @parameterized.expand(
+        [
+            ("separate", ["-P", "secrets:aql:pw"]),
+            ("attached", ["-Psecrets:aql:pw"]),
+            ("long", ["--password=secrets:aql:pw"]),
+        ]
+    )
+    def test_login_reads_and_writes(self, name, password):
+        args = ["-U", "sa-user"] + password + ["--sa-port", self.agent_port]
+        key = "k-" + name
+
+        rc, out = self.aql(args, command="INSERT INTO test.sa (PK, a) VALUES ('{}', 1)".format(key))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("OK, 1 record affected.", out)
+        self.assert_no_secret(out)
+        self.assertEqual(self.client.get(("test", "sa", key))[2], {"a": 1})
+
+        rc, out = self.aql(args, command="SELECT * FROM test.sa WHERE PK = '{}'".format(key))
+        self.assertEqual(rc, 0, out)
+        self.assertIn('| "{}" | 1 |'.format(key), out)
+        self.assert_no_secret(out)
+
+    def test_wrong_fetched_password_is_rejected_by_server(self):
+        rc, out = self.aql(["-U", "sa-user", "-P", "secrets:aql:wrong", "--sa-port", self.agent_port])
+
+        self.assert_rejected(rc, out)
+
+    def test_reference_is_never_sent(self):
+        rc, out = self.aql(["-U", "sa-literal", "-P", "b64:" + b64(USERS["sa-literal"])])
+        self.assert_logged_in(rc, out)
+
+        rc, out = self.aql(["-U", "sa-literal", "-P", "secrets:aql:literal_ref", "--sa-port", self.agent_port])
+        self.assert_rejected(rc, out)
+
+    @parameterized.expand(
+        [
+            ("agent_unreachable", "sa-literal", "{closed}", "connection or protocol error", "secret-agent: ERR: connect failed"),
+            (
+                "missing_key",
+                "sa-missing-key",
+                "{port}",
+                "bad request",
+                "secret-agent: ERR: response: absent not present in file {}/secrets.json\n".format(AGENT_DIR),
+            ),
+            (
+                "missing_resource",
+                "sa-missing-resource",
+                "{port}",
+                "bad request",
+                "secret-agent: ERR: response: resource not found in config: absent\n",
+            ),
+        ]
+    )
+    def test_failed_fetch_never_sends_reference(self, _, user, sa_port, reason, detail):
+        reference = USERS[user]
+        rc, out = self.aql(["-U", user, "-P", "b64:" + b64(reference)])
+        self.assert_logged_in(rc, out)
+
+        sa_port = sa_port.format(port=self.agent_port, closed=closed_port())
+        rc, out = self.aql(["-U", user, "-P", reference, "--sa-port", sa_port])
+
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("--password: secret agent request for {} failed: {}\n".format(reference, reason), out)
+        self.assertIn(detail, out)
+        self.assertNotIn(SEED_ROW, out)
+        self.assertNotIn(INVALID_CREDENTIAL, out)
+        self.assertNotIn(LOGIN_FAILED, out)
+        self.assert_no_secret(out)
+
+    def test_fetched_value_is_not_resolved_again(self):
+        rc, out = self.aql(["-U", "sa-lookalike", "-P", "secrets:aql:prefix_lookalike", "--sa-port", self.agent_port])
+
+        self.assert_logged_in(rc, out)
+
+    @parameterized.expand(
+        [
+            ("hostname", "localhost", "--sa-ca-file"),
+            ("ip", "127.0.0.1", "--sa-ca-file"),
+            ("legacy_cafile", "localhost", "--sa-cafile"),
+        ]
+    )
+    def test_tls_agent(self, _, address, ca_opt):
+        rc, out = self.aql(
+            ["-U", "sa-user", "-P", "secrets:aql:pw", "--sa-address", address, "--sa-port", self.tls_port, ca_opt, self.ca]
+        )
+
+        self.assert_logged_in(rc, out)
+
+    @parameterized.expand(
+        [
+            ("default_sections", [], '[cluster]\nuser = "sa-user"\npassword = "secrets:aql:pw"\n[secret-agent]\nsa-port = {port}\n'),
+            (
+                "instance_sections",
+                ["--instance", "e2e"],
+                '[cluster]\nuser = "sa-user"\npassword = "secrets:aql:wrong"\n[secret-agent]\nsa-port = {closed}\n'
+                '[cluster_e2e]\nuser = "sa-user"\npassword = "secrets:aql:pw"\n[secret-agent_e2e]\nsa-port = {port}\n',
+            ),
+        ]
+    )
+    def test_config_file(self, _, args, content):
+        config = self.config(content.format(port=self.agent_port, closed=closed_port()))
+        rc, out = self.aql(args, config)
+
+        self.assert_logged_in(rc, out)
+
+    def test_longest_password(self):
+        rc, out = self.aql(["-U", "sa-longest", "-P", "secrets:aql:longest", "--sa-port", self.agent_port])
+
+        self.assert_logged_in(rc, out)
+
+    def test_command_line_beats_config_file(self):
+        config = self.config(
+            '[cluster]\nuser = "sa-user"\npassword = "secrets:aql:wrong"\n[secret-agent]\nsa-port = {}\n'.format(self.agent_port)
+        )
+
+        rc, out = self.aql([], config)
+        self.assert_rejected(rc, out)
+
+        rc, out = self.aql(["-P", "secrets:aql:pw"], config)
+        self.assert_logged_in(rc, out)
+
+
+if __name__ == "__main__":
+    unittest.main()

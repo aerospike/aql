@@ -47,4 +47,6 @@ jobs:
         run: make init
 
       - name: Build and run E2E tests
+        env:
+          FEATKEY: ${{ secrets.FEAT_KEY_B64 }}
         run: make test

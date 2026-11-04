@@ -49,3 +49,17 @@ The aql binary will be in
 
 - `target/{target}/bin/aql`
 
+## Running the tests
+
+The E2E tests start Aerospike servers and Secret Agents in Docker.
+```
+make init
+make test
+```
+
+`test/secret_agent_server_test.py` also starts an Enterprise server with security enabled, so it needs a feature key file in `FEATKEY`. Without it the module is skipped, or fails when `CI` is set.
+```
+export FEATKEY=$(base64 < /path/to/features.conf)
+pipenv run pytest --disable-warnings test/secret_agent_server_test.py
+```
+
