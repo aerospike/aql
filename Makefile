@@ -261,7 +261,8 @@ cleanmodules:
 		$(MAKE) -C $(JANSSON_PATH) distclean || true; \
 	fi; \
 
-E2E_TEST_CMD = pytest --disable-warnings test/
+E2E_TEST_CMD = pytest --disable-warnings --ignore=test/fips_test.py test/
+FIPS_TEST_CMD = pytest --disable-warnings test/fips_test.py
 
 .PHONY: init
 init:
@@ -271,6 +272,10 @@ init:
 .PHONY: test
 test: all
 	pipenv run $(E2E_TEST_CMD)
+
+.PHONY: fips
+fips:
+	pipenv run $(FIPS_TEST_CMD)
 
 .PHONY: cleanall
 cleanall: clean cleanmodules
