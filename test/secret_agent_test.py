@@ -190,11 +190,11 @@ def make_ca(dir: str, name: str) -> str:
     return os.path.join(dir, name + ".pem")
 
 
-def make_leaf(dir: str, name: str, ca: str, san: str) -> tuple[str, str]:
-    """An agent certificate issued by ca for the given subject alternative names."""
+def make_leaf(dir: str, name: str, ca: str, san: str, usage: str = "serverAuth") -> tuple[str, str]:
+    """A certificate issued by ca for the given subject alternative names."""
     ca_name = os.path.basename(ca)[:-len(".pem")]
     write(os.path.join(dir, name + ".ext"),
-          "basicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName={}\n".format(san))
+          "basicConstraints=CA:FALSE\nextendedKeyUsage={}\nsubjectAltName={}\n".format(usage, san))
     openssl(dir, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + name,
             "-keyout", name + "-key.pem", "-out", name + ".csr")
     openssl(dir, "x509", "-req", "-days", "2", "-in", name + ".csr", "-CA", ca_name + ".pem",

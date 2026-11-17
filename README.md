@@ -63,3 +63,10 @@ export FEATKEY=$(base64 < /path/to/features.conf)
 pipenv run pytest --disable-warnings test/secret_agent_server_test.py
 ```
 
+### Running the FIPS tests
+```
+export FEATKEY=$(base64 < /path/to/features.conf)
+make fips
+```
+Builds aql from the working tree in a RHEL 9 container and runs it with that container's OpenSSL forced into FIPS mode, against a TLS server that requires client certificates. Not part of `make test`. The first run builds the client image.
+
