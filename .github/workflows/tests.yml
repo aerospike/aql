@@ -36,7 +36,7 @@ jobs:
         run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d '"' -f 2)" >> $GITHUB_ENV
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3.1.4
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
